@@ -24,9 +24,19 @@ export async function GET(request: NextRequest) {
     return apiError("FORBIDDEN", "Anda tidak memiliki izin melihat pelanggan.", 403);
   }
 
-  const customers = await listCustomers(staff.id, grant.dataScope);
+  const query = request.nextUrl.searchParams.get("q")?.trim();
+  if (query && query.length > 120) {
+    return apiError("INPUT_INVALID", "Kata pencarian terlalu panjang.", 400);
+  }
+  const manageGrant = await authorizeStaff(staff, "customers.manage");
+  const customers = await listCustomers(staff.id, grant.dataScope, query);
   return NextResponse.json({
-    customers: customers.map(({ createdBy: _createdBy, ...customer }) => customer),
+    customers: customers.map(({ createdBy, ...customer }) => ({
+      ...customer,
+      canEdit:
+        manageGrant?.dataScope === "all" ||
+        (manageGrant?.dataScope === "own" && createdBy === staff.id),
+    })),
   });
 }
 

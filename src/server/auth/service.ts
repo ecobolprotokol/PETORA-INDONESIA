@@ -221,6 +221,7 @@ export async function bootstrapOwner(input: SetupInput, userAgent?: string): Pro
             {
               name: "Pelanggan Contoh 1",
               phone: "081234567801",
+              phoneNormalized: "6281234567801",
               email: null,
               isSample: true,
               createdBy: owner.id,
@@ -229,6 +230,7 @@ export async function bootstrapOwner(input: SetupInput, userAgent?: string): Pro
             {
               name: "Pelanggan Contoh 2",
               phone: "081234567802",
+              phoneNormalized: "6281234567802",
               email: null,
               isSample: true,
               createdBy: owner.id,

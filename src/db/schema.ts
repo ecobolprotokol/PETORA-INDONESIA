@@ -1,16 +1,20 @@
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   bigint,
   boolean,
   char,
+  date,
   index,
   integer,
   jsonb,
+  numeric,
   pgTable,
   primaryKey,
   smallint,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
@@ -28,6 +32,10 @@ export const businessSettings = pgTable("business_settings", {
   taxEnabled: boolean("tax_enabled").notNull(),
   taxRateBps: integer("tax_rate_bps").notNull(),
   taxIncluded: boolean("tax_included").notNull(),
+  inventoryCostMethod: text("inventory_cost_method")
+    .$type<"average" | "fifo">()
+    .notNull()
+    .default("fifo"),
   quietHoursEnabled: boolean("quiet_hours_enabled").notNull().default(false),
   quietHoursStart: text("quiet_hours_start").notNull().default("22:00"),
   quietHoursEnd: text("quiet_hours_end").notNull().default("08:00"),
@@ -52,7 +60,17 @@ export const documentNumberSequences = pgTable(
   "document_number_sequences",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    documentType: text("document_type").$type<"invoice" | "purchase_order" | "receipt">().notNull(),
+    documentType: text("document_type")
+      .$type<
+        | "invoice"
+        | "purchase_request"
+        | "purchase_order"
+        | "inventory_transfer"
+        | "goods_receipt"
+        | "supplier_return"
+        | "receipt"
+      >()
+      .notNull(),
     branchId: uuid("branch_id").references(() => branches.id, { onDelete: "restrict" }),
     prefix: text("prefix").notNull(),
     nextNumber: bigint("next_number", { mode: "number" }).notNull(),
@@ -124,6 +142,15 @@ export const customers = pgTable(
     phone: text("phone").notNull(),
     email: text("email"),
     isSample: boolean("is_sample").notNull().default(false),
+    phoneNormalized: text("phone_normalized").notNull(),
+    address: text("address"),
+    notes: text("notes"),
+    tags: text("tags").array().notNull().default(sql`ARRAY[]::text[]`),
+    marketingConsent: boolean("marketing_consent").notNull().default(false),
+    notificationPreferences: jsonb("notification_preferences")
+      .$type<{ appointments: boolean; marketing: boolean }>()
+      .notNull()
+      .default(sql`'{"appointments": true, "marketing": false}'::jsonb`),
     createdBy: uuid("created_by").references(() => staffUsers.id, { onDelete: "set null" }),
     updatedBy: uuid("updated_by").references(() => staffUsers.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
@@ -132,6 +159,785 @@ export const customers = pgTable(
   (table) => [
     index("customers_created_by_created_at_idx").on(table.createdBy, sql`${table.createdAt} DESC`),
     index("customers_name_search_idx").on(sql`lower(${table.name})`),
+  ],
+);
+
+export const pets = pgTable(
+  "pets",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    name: text("name").notNull(),
+    species: text("species")
+      .$type<"dog" | "cat" | "bird" | "small_mammal" | "reptile" | "other">()
+      .notNull(),
+    breed: text("breed"),
+    sex: text("sex").$type<"male" | "female" | "unknown">().notNull().default("unknown"),
+    birthDate: date("birth_date", { mode: "string" }),
+    estimatedAgeMonths: integer("estimated_age_months"),
+    color: text("color"),
+    microchipNumber: text("microchip_number"),
+    photoUrl: text("photo_url"),
+    isSterilized: boolean("is_sterilized").notNull().default(false),
+    allergies: text("allergies").array().notNull().default(sql`ARRAY[]::text[]`),
+    behaviorNotes: text("behavior_notes"),
+    status: text("status")
+      .$type<"active" | "deceased" | "transferred">()
+      .notNull()
+      .default("active"),
+    createdBy: uuid("created_by").references(() => staffUsers.id, { onDelete: "set null" }),
+    updatedBy: uuid("updated_by").references(() => staffUsers.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("pets_name_search_idx").on(sql`lower(${table.name})`),
+    uniqueIndex("pets_microchip_lower_unique")
+      .on(sql`lower(${table.microchipNumber})`)
+      .where(sql`${table.microchipNumber} IS NOT NULL`),
+  ],
+);
+
+export const petOwners = pgTable(
+  "pet_owners",
+  {
+    petId: uuid("pet_id")
+      .notNull()
+      .references(() => pets.id, { onDelete: "cascade" }),
+    customerId: uuid("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "restrict" }),
+    relationship: text("relationship").notNull().default("owner"),
+    isPrimary: boolean("is_primary").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.petId, table.customerId] }),
+    index("pet_owners_customer_idx").on(table.customerId, table.petId),
+    uniqueIndex("pet_owners_single_primary_idx").on(table.petId).where(sql`${table.isPrimary}`),
+  ],
+);
+
+export const petWeightHistory = pgTable(
+  "pet_weight_history",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    petId: uuid("pet_id")
+      .notNull()
+      .references(() => pets.id, { onDelete: "cascade" }),
+    weightKg: numeric("weight_kg", { precision: 8, scale: 3 }).notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    note: text("note"),
+    recordedBy: uuid("recorded_by").references(() => staffUsers.id, { onDelete: "set null" }),
+  },
+  (table) => [
+    index("pet_weight_history_pet_date_idx").on(table.petId, sql`${table.recordedAt} DESC`),
+  ],
+);
+
+export const productCategories = pgTable(
+  "product_categories",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    name: text("name").notNull(),
+    parentId: uuid("parent_id").references((): AnyPgColumn => productCategories.id, {
+      onDelete: "restrict",
+    }),
+    createdBy: uuid("created_by").references(() => staffUsers.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("product_categories_name_lower_unique").on(sql`lower(${table.name})`)],
+);
+
+export const units = pgTable(
+  "units",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    name: text("name").notNull(),
+    abbreviation: text("abbreviation").notNull(),
+    dimension: text("dimension").$type<"count" | "mass" | "volume" | "length">().notNull(),
+    baseUnitId: uuid("base_unit_id").references((): AnyPgColumn => units.id, {
+      onDelete: "restrict",
+    }),
+    toBaseFactor: numeric("to_base_factor", { precision: 14, scale: 6 }).notNull().default("1"),
+    createdBy: uuid("created_by").references(() => staffUsers.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("units_abbreviation_lower_unique").on(sql`lower(${table.abbreviation})`)],
+);
+
+export const products = pgTable(
+  "products",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    name: text("name").notNull(),
+    sku: text("sku").notNull(),
+    productType: text("product_type")
+      .$type<"general" | "medicine" | "feed" | "accessory">()
+      .notNull(),
+    categoryId: uuid("category_id").references(() => productCategories.id, {
+      onDelete: "restrict",
+    }),
+    brand: text("brand"),
+    photoUrl: text("photo_url"),
+    description: text("description"),
+    baseUnitId: uuid("base_unit_id").references(() => units.id, { onDelete: "restrict" }),
+    medicineClass: text("medicine_class"),
+    prescriptionRequired: boolean("prescription_required").notNull().default(false),
+    isActive: boolean("is_active").notNull().default(true),
+    createdBy: uuid("created_by").references(() => staffUsers.id, { onDelete: "set null" }),
+    updatedBy: uuid("updated_by").references(() => staffUsers.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("products_sku_lower_unique").on(sql`lower(${table.sku})`),
+    index("products_name_search_idx").on(sql`lower(${table.name})`),
+    index("products_category_idx").on(table.categoryId, sql`lower(${table.name})`),
+  ],
+);
+
+export const productUnitConversions = pgTable(
+  "product_unit_conversions",
+  {
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    unitId: uuid("unit_id")
+      .notNull()
+      .references(() => units.id, { onDelete: "restrict" }),
+    conversionFactor: numeric("conversion_factor", { precision: 14, scale: 6 }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.productId, table.unitId] })],
+);
+
+export const productVariants = pgTable(
+  "product_variants",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    sku: text("sku").notNull(),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("product_variants_sku_lower_unique").on(sql`lower(${table.sku})`),
+    uniqueIndex("product_variants_product_name_lower_unique").on(
+      table.productId,
+      sql`lower(${table.name})`,
+    ),
+  ],
+);
+
+export const productBarcodes = pgTable(
+  "product_barcodes",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    variantId: uuid("variant_id").references(() => productVariants.id, { onDelete: "cascade" }),
+    barcode: text("barcode").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("product_barcodes_lower_unique").on(sql`lower(${table.barcode})`),
+    index("product_barcodes_product_idx").on(table.productId),
+  ],
+);
+
+export const priceTiers = pgTable(
+  "price_tiers",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    isActive: boolean("is_active").notNull().default(true),
+    createdBy: uuid("created_by").references(() => staffUsers.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("price_tiers_name_lower_unique").on(sql`lower(${table.name})`)],
+);
+
+export const productPrices = pgTable(
+  "product_prices",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    variantId: uuid("variant_id").references(() => productVariants.id, { onDelete: "cascade" }),
+    branchId: uuid("branch_id").references(() => branches.id, { onDelete: "cascade" }),
+    priceTierId: uuid("price_tier_id").references(() => priceTiers.id, { onDelete: "restrict" }),
+    purchasePriceCents: bigint("purchase_price_cents", { mode: "number" }).$type<number | null>(),
+    sellingPriceCents: bigint("selling_price_cents", { mode: "number" }).notNull(),
+    updatedBy: uuid("updated_by").references(() => staffUsers.id, { onDelete: "set null" }),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("product_prices_scope_unique")
+      .on(table.productId, table.variantId, table.branchId, table.priceTierId)
+      .nullsNotDistinct(),
+    index("product_prices_branch_tier_idx").on(table.branchId, table.priceTierId),
+  ],
+);
+
+export const serviceCategories = pgTable(
+  "service_categories",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    name: text("name").notNull(),
+    createdBy: uuid("created_by").references(() => staffUsers.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("service_categories_name_lower_unique").on(sql`lower(${table.name})`)],
+);
+
+export const services = pgTable(
+  "services",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    name: text("name").notNull(),
+    code: text("code").notNull(),
+    categoryId: uuid("category_id").references(() => serviceCategories.id, {
+      onDelete: "restrict",
+    }),
+    description: text("description"),
+    durationMinutes: integer("duration_minutes").notNull(),
+    isActive: boolean("is_active").notNull().default(true),
+    createdBy: uuid("created_by").references(() => staffUsers.id, { onDelete: "set null" }),
+    updatedBy: uuid("updated_by").references(() => staffUsers.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("services_code_lower_unique").on(sql`lower(${table.code})`),
+    index("services_name_search_idx").on(sql`lower(${table.name})`),
+  ],
+);
+
+export const servicePrices = pgTable(
+  "service_prices",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    serviceId: uuid("service_id")
+      .notNull()
+      .references(() => services.id, { onDelete: "cascade" }),
+    branchId: uuid("branch_id").references(() => branches.id, { onDelete: "cascade" }),
+    priceTierId: uuid("price_tier_id").references(() => priceTiers.id, { onDelete: "restrict" }),
+    priceCents: bigint("price_cents", { mode: "number" }).notNull(),
+    updatedBy: uuid("updated_by").references(() => staffUsers.id, { onDelete: "set null" }),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("service_prices_scope_unique")
+      .on(table.serviceId, table.branchId, table.priceTierId)
+      .nullsNotDistinct(),
+    index("service_prices_branch_tier_idx").on(table.branchId, table.priceTierId),
+  ],
+);
+
+export const warehouses = pgTable(
+  "warehouses",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id, { onDelete: "restrict" }),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    isActive: boolean("is_active").notNull().default(true),
+    createdBy: uuid("created_by").references(() => staffUsers.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("warehouses_branch_code_lower_unique").on(
+      table.branchId,
+      sql`lower(${table.code})`,
+    ),
+    index("warehouses_branch_active_idx").on(table.branchId, table.isActive),
+  ],
+);
+
+export const suppliers = pgTable(
+  "suppliers",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    name: text("name").notNull(),
+    contactName: text("contact_name"),
+    phone: text("phone"),
+    email: text("email"),
+    address: text("address"),
+    notes: text("notes"),
+    isActive: boolean("is_active").notNull().default(true),
+    createdBy: uuid("created_by").references(() => staffUsers.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("suppliers_name_lower_unique").on(sql`lower(${table.name})`),
+    index("suppliers_active_name_idx").on(table.isActive, sql`lower(${table.name})`),
+  ],
+);
+
+export const inventoryBatches = pgTable(
+  "inventory_batches",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    warehouseId: uuid("warehouse_id")
+      .notNull()
+      .references(() => warehouses.id, { onDelete: "restrict" }),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "restrict" }),
+    variantId: uuid("variant_id").references(() => productVariants.id, { onDelete: "restrict" }),
+    supplierId: uuid("supplier_id").references(() => suppliers.id, { onDelete: "restrict" }),
+    batchNumber: text("batch_number").notNull(),
+    expiresOn: date("expires_on", { mode: "string" }),
+    unitCostCents: bigint("unit_cost_cents", { mode: "number" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("inventory_batches_lot_unique")
+      .on(table.warehouseId, table.productId, table.variantId, table.batchNumber)
+      .nullsNotDistinct(),
+    index("inventory_batches_fefo_idx").on(
+      table.warehouseId,
+      table.productId,
+      table.variantId,
+      table.expiresOn,
+      table.createdAt,
+    ),
+  ],
+);
+
+export const inventoryMovements = pgTable(
+  "inventory_movements",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    warehouseId: uuid("warehouse_id")
+      .notNull()
+      .references(() => warehouses.id, { onDelete: "restrict" }),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "restrict" }),
+    variantId: uuid("variant_id").references(() => productVariants.id, { onDelete: "restrict" }),
+    batchId: uuid("batch_id")
+      .notNull()
+      .references(() => inventoryBatches.id, { onDelete: "restrict" }),
+    movementType: text("movement_type")
+      .$type<
+        | "receipt"
+        | "adjustment_in"
+        | "adjustment_out"
+        | "transfer_in"
+        | "transfer_out"
+        | "supplier_return"
+        | "bundle_component_in"
+        | "bundle_component_out"
+      >()
+      .notNull(),
+    quantityDelta: numeric("quantity_delta", { precision: 14, scale: 3 }).notNull(),
+    unitCostCents: bigint("unit_cost_cents", { mode: "number" }).notNull(),
+    sourceType: text("source_type").notNull(),
+    sourceId: uuid("source_id").notNull(),
+    reason: text("reason"),
+    actorUserId: uuid("actor_user_id").references(() => staffUsers.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("inventory_movements_warehouse_product_idx").on(
+      table.warehouseId,
+      table.productId,
+      table.createdAt,
+    ),
+    index("inventory_movements_batch_created_idx").on(table.batchId, table.createdAt),
+    uniqueIndex("inventory_movements_source_unique").on(
+      table.sourceType,
+      table.sourceId,
+      table.batchId,
+      table.movementType,
+    ),
+  ],
+);
+
+export const inventoryReorderLevels = pgTable(
+  "inventory_reorder_levels",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    warehouseId: uuid("warehouse_id")
+      .notNull()
+      .references(() => warehouses.id, { onDelete: "restrict" }),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "restrict" }),
+    variantId: uuid("variant_id").references(() => productVariants.id, { onDelete: "restrict" }),
+    minimumQuantity: numeric("minimum_quantity", { precision: 14, scale: 3 }).notNull(),
+    reorderQuantity: numeric("reorder_quantity", { precision: 14, scale: 3 }).notNull(),
+    updatedBy: uuid("updated_by").references(() => staffUsers.id, { onDelete: "set null" }),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("inventory_reorder_levels_scope_unique")
+      .on(table.warehouseId, table.productId, table.variantId)
+      .nullsNotDistinct(),
+    index("inventory_reorder_levels_warehouse_idx").on(table.warehouseId, table.productId),
+  ],
+);
+
+export const productBundleComponents = pgTable(
+  "product_bundle_components",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    bundleProductId: uuid("bundle_product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    componentProductId: uuid("component_product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "restrict" }),
+    componentVariantId: uuid("component_variant_id").references(() => productVariants.id, {
+      onDelete: "restrict",
+    }),
+    quantity: numeric("quantity", { precision: 14, scale: 3 }).notNull(),
+  },
+  (table) => [
+    unique("product_bundle_components_unique")
+      .on(table.bundleProductId, table.componentProductId, table.componentVariantId)
+      .nullsNotDistinct(),
+  ],
+);
+
+export const purchaseRequests = pgTable(
+  "purchase_requests",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id, { onDelete: "restrict" }),
+    requestNumber: text("request_number").notNull().unique(),
+    status: text("status")
+      .$type<"draft" | "submitted" | "approved" | "rejected" | "converted">()
+      .notNull()
+      .default("draft"),
+    requestedBy: uuid("requested_by")
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: "restrict" }),
+    reviewedBy: uuid("reviewed_by").references(() => staffUsers.id, { onDelete: "set null" }),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("purchase_requests_branch_status_idx").on(table.branchId, table.status, table.createdAt),
+  ],
+);
+
+export const purchaseRequestLines = pgTable(
+  "purchase_request_lines",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    requestId: uuid("request_id")
+      .notNull()
+      .references(() => purchaseRequests.id, { onDelete: "cascade" }),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "restrict" }),
+    variantId: uuid("variant_id").references(() => productVariants.id, { onDelete: "restrict" }),
+    quantity: numeric("quantity", { precision: 14, scale: 3 }).notNull(),
+    estimatedUnitCostCents: bigint("estimated_unit_cost_cents", { mode: "number" }),
+  },
+  (table) => [index("purchase_request_lines_request_idx").on(table.requestId)],
+);
+
+export const purchaseOrders = pgTable(
+  "purchase_orders",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id, { onDelete: "restrict" }),
+    warehouseId: uuid("warehouse_id")
+      .notNull()
+      .references(() => warehouses.id, { onDelete: "restrict" }),
+    supplierId: uuid("supplier_id")
+      .notNull()
+      .references(() => suppliers.id, { onDelete: "restrict" }),
+    requestId: uuid("request_id").references(() => purchaseRequests.id, { onDelete: "restrict" }),
+    orderNumber: text("order_number").notNull().unique(),
+    status: text("status")
+      .$type<"draft" | "ordered" | "partially_received" | "received" | "cancelled">()
+      .notNull()
+      .default("draft"),
+    orderedBy: uuid("ordered_by")
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: "restrict" }),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("purchase_orders_branch_status_idx").on(table.branchId, table.status, table.createdAt),
+    index("purchase_orders_supplier_idx").on(table.supplierId, table.createdAt),
+  ],
+);
+
+export const purchaseOrderLines = pgTable(
+  "purchase_order_lines",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => purchaseOrders.id, { onDelete: "restrict" }),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "restrict" }),
+    variantId: uuid("variant_id").references(() => productVariants.id, { onDelete: "restrict" }),
+    quantity: numeric("quantity", { precision: 14, scale: 3 }).notNull(),
+    receivedQuantity: numeric("received_quantity", { precision: 14, scale: 3 })
+      .notNull()
+      .default("0"),
+    unitCostCents: bigint("unit_cost_cents", { mode: "number" }).notNull(),
+  },
+  (table) => [index("purchase_order_lines_order_idx").on(table.orderId)],
+);
+
+export const purchaseReceipts = pgTable(
+  "purchase_receipts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => purchaseOrders.id, { onDelete: "restrict" }),
+    receiptNumber: text("receipt_number").notNull().unique(),
+    idempotencyKey: text("idempotency_key").notNull().unique(),
+    receivedBy: uuid("received_by")
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: "restrict" }),
+    receivedAt: timestamp("received_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    notes: text("notes"),
+  },
+  (table) => [index("purchase_receipts_order_idx").on(table.orderId, table.receivedAt)],
+);
+
+export const purchaseReceiptLines = pgTable(
+  "purchase_receipt_lines",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    receiptId: uuid("receipt_id")
+      .notNull()
+      .references(() => purchaseReceipts.id, { onDelete: "restrict" }),
+    orderLineId: uuid("order_line_id")
+      .notNull()
+      .references(() => purchaseOrderLines.id, { onDelete: "restrict" }),
+    batchId: uuid("batch_id")
+      .notNull()
+      .references(() => inventoryBatches.id, { onDelete: "restrict" }),
+    quantity: numeric("quantity", { precision: 14, scale: 3 }).notNull(),
+    unitCostCents: bigint("unit_cost_cents", { mode: "number" }).notNull(),
+  },
+  (table) => [index("purchase_receipt_lines_receipt_idx").on(table.receiptId)],
+);
+
+export const supplierReturns = pgTable(
+  "supplier_returns",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id, { onDelete: "restrict" }),
+    supplierId: uuid("supplier_id")
+      .notNull()
+      .references(() => suppliers.id, { onDelete: "restrict" }),
+    warehouseId: uuid("warehouse_id")
+      .notNull()
+      .references(() => warehouses.id, { onDelete: "restrict" }),
+    returnNumber: text("return_number").notNull().unique(),
+    reason: text("reason").notNull(),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [index("supplier_returns_supplier_idx").on(table.supplierId, table.createdAt)],
+);
+
+export const supplierReturnLines = pgTable(
+  "supplier_return_lines",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    returnId: uuid("return_id")
+      .notNull()
+      .references(() => supplierReturns.id, { onDelete: "restrict" }),
+    batchId: uuid("batch_id")
+      .notNull()
+      .references(() => inventoryBatches.id, { onDelete: "restrict" }),
+    quantity: numeric("quantity", { precision: 14, scale: 3 }).notNull(),
+    unitCostCents: bigint("unit_cost_cents", { mode: "number" }).notNull(),
+  },
+  (table) => [index("supplier_return_lines_return_idx").on(table.returnId)],
+);
+
+export const supplierPayableEntries = pgTable(
+  "supplier_payable_entries",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    supplierId: uuid("supplier_id")
+      .notNull()
+      .references(() => suppliers.id, { onDelete: "restrict" }),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id, { onDelete: "restrict" }),
+    entryType: text("entry_type")
+      .$type<"receipt" | "return" | "payment" | "adjustment">()
+      .notNull(),
+    amountCents: bigint("amount_cents", { mode: "number" }).notNull(),
+    sourceType: text("source_type").notNull(),
+    sourceId: uuid("source_id").notNull(),
+    createdBy: uuid("created_by").references(() => staffUsers.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("supplier_payable_source_unique").on(table.sourceType, table.sourceId),
+    index("supplier_payable_supplier_date_idx").on(table.supplierId, table.createdAt),
+  ],
+);
+
+export const stocktakes = pgTable(
+  "stocktakes",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    warehouseId: uuid("warehouse_id")
+      .notNull()
+      .references(() => warehouses.id, { onDelete: "restrict" }),
+    status: text("status")
+      .$type<"draft" | "pending_approval" | "approved" | "rejected">()
+      .notNull()
+      .default("draft"),
+    reason: text("reason").notNull(),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: "restrict" }),
+    reviewedBy: uuid("reviewed_by").references(() => staffUsers.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true, mode: "date" }),
+  },
+  (table) => [index("stocktakes_warehouse_status_idx").on(table.warehouseId, table.status)],
+);
+
+export const stocktakeLines = pgTable(
+  "stocktake_lines",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stocktakeId: uuid("stocktake_id")
+      .notNull()
+      .references(() => stocktakes.id, { onDelete: "cascade" }),
+    batchId: uuid("batch_id")
+      .notNull()
+      .references(() => inventoryBatches.id, { onDelete: "restrict" }),
+    expectedQuantity: numeric("expected_quantity", { precision: 14, scale: 3 }).notNull(),
+    countedQuantity: numeric("counted_quantity", { precision: 14, scale: 3 }).notNull(),
+  },
+  (table) => [
+    unique("stocktake_lines_batch_unique").on(table.stocktakeId, table.batchId),
+    index("stocktake_lines_stocktake_idx").on(table.stocktakeId),
+  ],
+);
+
+export const inventoryAdjustments = pgTable(
+  "inventory_adjustments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    warehouseId: uuid("warehouse_id")
+      .notNull()
+      .references(() => warehouses.id, { onDelete: "restrict" }),
+    reason: text("reason").notNull(),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("inventory_adjustments_warehouse_created_idx").on(table.warehouseId, table.createdAt),
+  ],
+);
+
+export const inventoryTransfers = pgTable(
+  "inventory_transfers",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    transferNumber: text("transfer_number").notNull().unique(),
+    sourceWarehouseId: uuid("source_warehouse_id")
+      .notNull()
+      .references(() => warehouses.id, { onDelete: "restrict" }),
+    destinationWarehouseId: uuid("destination_warehouse_id")
+      .notNull()
+      .references(() => warehouses.id, { onDelete: "restrict" }),
+    status: text("status")
+      .$type<"requested" | "in_transit" | "received" | "cancelled">()
+      .notNull()
+      .default("requested"),
+    reason: text("reason").notNull(),
+    requestedBy: uuid("requested_by")
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: "restrict" }),
+    shippedBy: uuid("shipped_by").references(() => staffUsers.id, { onDelete: "set null" }),
+    receivedBy: uuid("received_by").references(() => staffUsers.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+    shippedAt: timestamp("shipped_at", { withTimezone: true, mode: "date" }),
+    receivedAt: timestamp("received_at", { withTimezone: true, mode: "date" }),
+  },
+  (table) => [
+    index("inventory_transfers_source_status_idx").on(table.sourceWarehouseId, table.status),
+    index("inventory_transfers_destination_status_idx").on(
+      table.destinationWarehouseId,
+      table.status,
+    ),
+  ],
+);
+
+export const inventoryTransferLines = pgTable(
+  "inventory_transfer_lines",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    transferId: uuid("transfer_id")
+      .notNull()
+      .references(() => inventoryTransfers.id, { onDelete: "restrict" }),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "restrict" }),
+    variantId: uuid("variant_id").references(() => productVariants.id, { onDelete: "restrict" }),
+    quantity: numeric("quantity", { precision: 14, scale: 3 }).notNull(),
+  },
+  (table) => [index("inventory_transfer_lines_transfer_idx").on(table.transferId)],
+);
+
+export const inventoryTransferBatchLines = pgTable(
+  "inventory_transfer_batch_lines",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    transferLineId: uuid("transfer_line_id")
+      .notNull()
+      .references(() => inventoryTransferLines.id, { onDelete: "restrict" }),
+    sourceBatchId: uuid("source_batch_id")
+      .notNull()
+      .references(() => inventoryBatches.id, { onDelete: "restrict" }),
+    destinationBatchId: uuid("destination_batch_id")
+      .notNull()
+      .references(() => inventoryBatches.id, { onDelete: "restrict" }),
+    shippedQuantity: numeric("shipped_quantity", { precision: 14, scale: 3 }).notNull(),
+    receivedQuantity: numeric("received_quantity", { precision: 14, scale: 3 })
+      .notNull()
+      .default("0"),
+  },
+  (table) => [
+    unique("inventory_transfer_batch_unique").on(table.transferLineId, table.sourceBatchId),
+    index("inventory_transfer_batch_transfer_line_idx").on(table.transferLineId),
   ],
 );
 

@@ -20,7 +20,11 @@ interface SuperAdminSettingsProps {
 
 const DOCUMENT_LABELS = {
   invoice: "Invoice",
+  purchase_request: "Permintaan pembelian",
   purchase_order: "Purchase order",
+  inventory_transfer: "Transfer stok",
+  goods_receipt: "Penerimaan barang",
+  supplier_return: "Retur supplier",
   receipt: "Kuitansi",
 } as const;
 
@@ -72,6 +76,7 @@ export function SuperAdminSettings({ settings, branches }: SuperAdminSettingsPro
       taxEnabled: values.get("taxEnabled") === "on",
       taxRateBps: Math.round(taxPercent * 100),
       taxIncluded: values.get("taxIncluded") === "on",
+      inventoryCostMethod: values.get("inventoryCostMethod"),
       quietHoursEnabled: values.get("quietHoursEnabled") === "on",
       quietHoursStart: values.get("quietHoursStart"),
       quietHoursEnd: values.get("quietHoursEnd"),
@@ -281,6 +286,13 @@ export function SuperAdminSettings({ settings, branches }: SuperAdminSettingsPro
               <span>Rawat inap</span>
             </label>
           </fieldset>
+          <label>
+            Metode HPP persediaan
+            <select defaultValue={settings.inventoryCostMethod} name="inventoryCostMethod">
+              <option value="fifo">FIFO berdasarkan batch</option>
+              <option value="average">Rata-rata tertimbang</option>
+            </select>
+          </label>
           <button className="button button--primary" disabled={submitting} type="submit">
             Simpan pengaturan
           </button>
@@ -309,7 +321,11 @@ export function SuperAdminSettings({ settings, branches }: SuperAdminSettingsPro
               Jenis dokumen
               <select defaultValue="invoice" name="documentType">
                 <option value="invoice">Invoice</option>
+                <option value="purchase_request">Permintaan pembelian</option>
                 <option value="purchase_order">Purchase order</option>
+                <option value="inventory_transfer">Transfer stok</option>
+                <option value="goods_receipt">Penerimaan barang</option>
+                <option value="supplier_return">Retur supplier</option>
                 <option value="receipt">Kuitansi</option>
               </select>
             </label>

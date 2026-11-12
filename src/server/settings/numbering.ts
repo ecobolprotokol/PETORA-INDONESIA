@@ -3,6 +3,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import type { NodePgTransaction } from "drizzle-orm/node-postgres";
 import type * as schema from "@/db/schema";
 import { branches, documentNumberSequences } from "@/db/schema";
+import type { DocumentType } from "./validation";
 
 type SettingsTransaction = NodePgTransaction<
   typeof schema,
@@ -14,7 +15,7 @@ export class DocumentSequenceNotFoundError extends Error {}
 export class DocumentSequenceExhaustedError extends Error {}
 
 interface DocumentNumberInput {
-  documentType: "invoice" | "purchase_order" | "receipt";
+  documentType: DocumentType;
   branchId: string | null;
 }
 

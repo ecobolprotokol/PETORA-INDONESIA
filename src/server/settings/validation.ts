@@ -1,7 +1,15 @@
 import { z } from "zod";
 
 export const FEATURE_KEYS = ["commissions", "loyalty", "inpatient"] as const;
-export const DOCUMENT_TYPES = ["invoice", "purchase_order", "receipt"] as const;
+export const DOCUMENT_TYPES = [
+  "invoice",
+  "purchase_request",
+  "purchase_order",
+  "inventory_transfer",
+  "goods_receipt",
+  "supplier_return",
+  "receipt",
+] as const;
 
 function isValidTimeZone(timezone: string): boolean {
   try {
@@ -20,6 +28,7 @@ export const updateBusinessSettingsSchema = z
     taxEnabled: z.boolean(),
     taxRateBps: z.number().int().min(0).max(10_000),
     taxIncluded: z.boolean(),
+    inventoryCostMethod: z.enum(["average", "fifo"]).optional(),
     quietHoursEnabled: z.boolean(),
     quietHoursStart: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/u),
     quietHoursEnd: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/u),

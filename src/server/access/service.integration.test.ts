@@ -9,6 +9,7 @@ import {
   staffPermissionOverrides,
   staffRoleAssignments,
   staffUsers,
+  warehouses,
 } from "@/db/schema";
 import { listBranchesForStaff } from "./service";
 
@@ -87,9 +88,11 @@ afterAll(async () => {
       .where(eq(staffPermissionOverrides.staffUserId, staffId));
   }
   if (ownBranchId) {
+    await database.delete(warehouses).where(eq(warehouses.branchId, ownBranchId));
     await database.delete(branches).where(eq(branches.id, ownBranchId));
   }
   if (otherBranchId) {
+    await database.delete(warehouses).where(eq(warehouses.branchId, otherBranchId));
     await database.delete(branches).where(eq(branches.id, otherBranchId));
   }
   if (staffId) {

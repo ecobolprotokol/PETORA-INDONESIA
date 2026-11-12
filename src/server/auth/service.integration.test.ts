@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { NextRequest } from "next/server";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { DELETE as removePermissionOverrideRoute } from "@/app/api/access/permission-overrides/[overrideId]/route";
@@ -44,13 +44,33 @@ import {
   businessSettings,
   customers,
   documentNumberSequences,
+  inventoryAdjustments,
+  inventoryBatches,
+  inventoryMovements,
+  inventoryTransferBatchLines,
+  inventoryTransferLines,
+  inventoryTransfers,
+  productBundleComponents,
+  purchaseOrderLines,
+  purchaseOrders,
+  purchaseReceiptLines,
+  purchaseReceipts,
+  purchaseRequestLines,
+  purchaseRequests,
   rolePermissions,
   staffNotifications,
   staffPermissionOverrides,
   staffRoleAssignments,
   staffUsers,
+  stocktakeLines,
+  stocktakes,
+  supplierPayableEntries,
+  supplierReturnLines,
+  supplierReturns,
+  suppliers,
   systemModuleFeatures,
   systemState,
+  warehouses,
 } from "@/db/schema";
 import {
   assignAccessRole,
@@ -113,8 +133,31 @@ async function clearTestData() {
   const database = getDatabase();
   // The dedicated test database disables the guard only while removing fixture accounts.
   await database.execute(sql`ALTER TABLE staff_users DISABLE TRIGGER staff_users_protect_owner`);
+  await database.execute(
+    sql`ALTER TABLE inventory_movements DISABLE TRIGGER inventory_movements_immutable`,
+  );
 
   try {
+    await database.delete(stocktakeLines);
+    await database.delete(stocktakes);
+    await database.delete(inventoryTransferBatchLines);
+    await database.delete(inventoryTransferLines);
+    await database.delete(inventoryTransfers);
+    await database.delete(inventoryAdjustments);
+    await database.delete(supplierReturnLines);
+    await database.delete(supplierReturns);
+    await database.delete(supplierPayableEntries);
+    await database.delete(purchaseReceiptLines);
+    await database.delete(purchaseReceipts);
+    await database.delete(purchaseOrderLines);
+    await database.delete(purchaseOrders);
+    await database.delete(purchaseRequestLines);
+    await database.delete(purchaseRequests);
+    await database.delete(inventoryMovements);
+    await database.delete(inventoryBatches);
+    await database.delete(productBundleComponents);
+    await database.delete(warehouses);
+    await database.delete(suppliers);
     await database.delete(customers);
     await database.delete(staffRoleAssignments);
     await database.delete(staffPermissionOverrides);
@@ -140,6 +183,7 @@ async function clearTestData() {
         taxEnabled: false,
         taxRateBps: 0,
         taxIncluded: false,
+        inventoryCostMethod: "fifo",
         quietHoursEnabled: false,
         quietHoursStart: "22:00",
         quietHoursEnd: "08:00",
@@ -154,10 +198,17 @@ async function clearTestData() {
       .set({ isEnabled: false, updatedBy: null, updatedAt: new Date() });
     await database.insert(documentNumberSequences).values([
       { documentType: "invoice", prefix: "INV", nextNumber: 1, minimumWidth: 5 },
+      { documentType: "purchase_request", prefix: "PR", nextNumber: 1, minimumWidth: 5 },
       { documentType: "purchase_order", prefix: "PO", nextNumber: 1, minimumWidth: 5 },
+      { documentType: "inventory_transfer", prefix: "TRF", nextNumber: 1, minimumWidth: 5 },
+      { documentType: "goods_receipt", prefix: "GRN", nextNumber: 1, minimumWidth: 5 },
+      { documentType: "supplier_return", prefix: "SRN", nextNumber: 1, minimumWidth: 5 },
       { documentType: "receipt", prefix: "RCP", nextNumber: 1, minimumWidth: 5 },
     ]);
   } finally {
+    await database.execute(
+      sql`ALTER TABLE inventory_movements ENABLE TRIGGER inventory_movements_immutable`,
+    );
     await database.execute(sql`ALTER TABLE staff_users ENABLE TRIGGER staff_users_protect_owner`);
   }
 }
@@ -405,7 +456,8 @@ describe("staff authentication with PostgreSQL", () => {
 
     const actions = await getDatabase()
       .select({ action: auditEvents.action, metadata: auditEvents.metadata })
-      .from(auditEvents);
+      .from(auditEvents)
+      .where(eq(auditEvents.actorUserId, setup.staff.id));
     expect(actions.map(({ action }) => action)).toEqual(
       expect.arrayContaining(["setup.owner_created", "auth.login", "auth.logout"]),
     );
@@ -441,6 +493,7 @@ describe("staff authentication with PostgreSQL", () => {
     await database.insert(customers).values({
       name: "Pelanggan Reguler",
       phone: "081234567899",
+      phoneNormalized: "6281234567899",
       createdBy: setup.staff.id,
       updatedBy: setup.staff.id,
     });
@@ -1198,7 +1251,36 @@ describe("staff authentication with PostgreSQL", () => {
         { key: "branches.read", branchScoped: true, supportsOwnScope: true, highRisk: false },
         { key: "customers.manage", branchScoped: false, supportsOwnScope: true, highRisk: true },
         { key: "customers.read", branchScoped: false, supportsOwnScope: true, highRisk: true },
+        { key: "inventory.adjust", branchScoped: true, supportsOwnScope: false, highRisk: true },
+        { key: "inventory.approve", branchScoped: true, supportsOwnScope: false, highRisk: true },
+        { key: "inventory.cost.read", branchScoped: true, supportsOwnScope: false, highRisk: true },
+        { key: "inventory.manage", branchScoped: true, supportsOwnScope: false, highRisk: true },
+        { key: "inventory.read", branchScoped: true, supportsOwnScope: false, highRisk: false },
+        { key: "inventory.transfer", branchScoped: true, supportsOwnScope: false, highRisk: true },
+        { key: "pets.manage", branchScoped: false, supportsOwnScope: true, highRisk: true },
+        { key: "pets.read", branchScoped: false, supportsOwnScope: true, highRisk: true },
+        { key: "procurement.approve", branchScoped: true, supportsOwnScope: false, highRisk: true },
+        {
+          key: "procurement.cost.read",
+          branchScoped: true,
+          supportsOwnScope: false,
+          highRisk: true,
+        },
+        { key: "procurement.manage", branchScoped: true, supportsOwnScope: false, highRisk: true },
+        { key: "procurement.read", branchScoped: true, supportsOwnScope: false, highRisk: false },
+        {
+          key: "products.cost.manage",
+          branchScoped: false,
+          supportsOwnScope: true,
+          highRisk: true,
+        },
+        { key: "products.cost.read", branchScoped: false, supportsOwnScope: true, highRisk: true },
+        { key: "products.manage", branchScoped: false, supportsOwnScope: true, highRisk: true },
+        { key: "products.read", branchScoped: false, supportsOwnScope: true, highRisk: false },
+        { key: "services.manage", branchScoped: false, supportsOwnScope: true, highRisk: true },
+        { key: "services.read", branchScoped: false, supportsOwnScope: true, highRisk: false },
         { key: "settings.manage", branchScoped: false, highRisk: true },
+        { key: "suppliers.manage", branchScoped: false, supportsOwnScope: false, highRisk: true },
       ],
     });
 
@@ -1739,19 +1821,19 @@ describe("staff authentication with PostgreSQL", () => {
       .select({ action: auditEvents.action, metadata: auditEvents.metadata })
       .from(auditEvents)
       .where(
-        inArray(auditEvents.action, [
-          "staff.created",
-          "staff.password_changed",
-          "staff.deactivated",
-          "staff.updated",
-        ]),
+        and(
+          eq(auditEvents.targetId, staff.id),
+          inArray(auditEvents.action, [
+            "staff.created",
+            "staff.password_changed",
+            "staff.deactivated",
+            "staff.updated",
+          ]),
+        ),
       );
-    expect(staffAudit.map(({ action }) => action)).toEqual([
-      "staff.created",
-      "staff.password_changed",
-      "staff.deactivated",
-      "staff.updated",
-    ]);
+    expect(staffAudit.map(({ action }) => action).sort()).toEqual(
+      ["staff.created", "staff.password_changed", "staff.deactivated", "staff.updated"].sort(),
+    );
     expect(staffAudit.every(({ metadata }) => Object.keys(metadata).length === 0)).toBe(true);
   });
 });
