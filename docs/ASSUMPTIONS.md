@@ -1,0 +1,18 @@
+# Asumsi
+
+Catat asumsi produk yang belum ditentukan spesifikasi di sini beserta tanggal dan dampaknya. Keputusan teknis dicatat terpisah di [DECISIONS.md](./DECISIONS.md).
+
+Asumsi produk yang belum ditentukan spesifikasi dicatat di bawah. Jika kebutuhan baru muncul, pilih perilaku yang paling umum untuk bisnis petshop dan klinik hewan di Indonesia, lalu dokumentasikan sebelum menerapkannya.
+
+## Fase 1
+
+- Login staf memakai alamat email dan kata sandi; sesi server berlaku 12 jam dan berakhir saat logout. Perubahan masa berlaku dan pilihan identitas login dapat ditinjau sebelum autentikasi diperluas ke staf lain.
+- Setup awal membuat akun Owner, cabang pertama, profil bisnis, zona waktu, bahasa, dan pengaturan pajak dalam satu transaksi. Pemeriksaan keterjangkauan server dari luar belum tersedia dan masih menjadi bagian wizard Fase 1.
+- Batas login awal adalah lima percobaan per email dalam jendela 15 menit; nilai ini harus dievaluasi sebelum rilis produksi.
+- 2026-11-12: Kode cabang dibuat unik tanpa membedakan huruf besar/kecil dan dibatasi 2–12 karakter alfanumerik, tanda hubung, atau garis bawah. Form awal hanya menawarkan zona waktu Indonesia (Asia/Jakarta, Asia/Makassar, Asia/Jayapura), dengan Asia/Jakarta sebagai pilihan awal; perlu ditinjau bila bisnis beroperasi di luar Indonesia atau memerlukan format kode lain.
+- 2026-11-12: 2FA staf memakai TOTP RFC 6238 enam digit setiap 30 detik dengan toleransi satu interval waktu, challenge login lima menit dengan maksimum lima percobaan, dan pendaftaran secret kedaluwarsa setelah sepuluh menit. Enrollment menghasilkan sepuluh kode pemulihan sekali pakai; secret dienkripsi AES-256-GCM dengan kunci eksternal `TOTP_ENCRYPTION_KEY` yang wajib disimpan stabil dan dicadangkan. Peran yang mewajibkan 2FA hanya dapat ditugaskan kepada staf yang sudah mendaftarkan TOTP, dan 2FA tidak dapat dimatikan selama peran wajib masih aktif ditugaskan.
+- 2026-11-12: Cakupan data `own` untuk izin baca cabang berarti hanya cabang aktif yang dibuat oleh staf. Cakupan ini tidak otomatis berlaku ke modul lain; setiap modul harus menerapkan filter kepemilikan datanya sendiri sebelum izin tersebut dinyatakan lengkap.
+- 2026-11-12: Pengecualian izin per staf hanya dapat diatur Owner atau staf yang secara eksplisit menerima izin berisiko tinggi `access.manage`; alasan tetap wajib. Pengecualian dibatasi per cabang untuk izin bercakupan cabang; penolakan eksplisit mengalahkan izin dari peran, sedangkan pemberian eksplisit menambah akses pada cakupan itu. Scope data pada pengecualian `allow` tetap mengikuti `all`/`own` yang didukung oleh izin.
+- 2026-11-12: Izin `access.manage`, `settings.manage`, dan `audit.read` adalah izin global berisiko tinggi yang dapat didelegasikan melalui peran; Owner selalu melewati pemeriksaan izin. `access.manage` memberi kontrol penuh atas staf, peran, penugasan, dan pengecualian, sehingga hanya boleh diberikan kepada admin tepercaya. Izin modul yang belum memiliki endpoint aktif tidak dimasukkan ke katalog sampai modul tersebut dapat menegakkannya.
+- 2026-11-12: Pemeriksaan kesiapan setup memastikan aplikasi dan basis data merespons dari alamat yang sedang dibuka pengguna. Ini membuktikan akses dari jaringan pengguna saat itu, bukan keterjangkauan dari jaringan penyedia webhook atau seluruh internet; verifikasi eksternal penuh tetap memerlukan domain dan layanan pemeriksa eksternal.
+- 2026-11-12: Format nomor dokumen saat ini adalah `PREFIX/KODE-CABANG/ANGKA`; cakupan global memakai `GLOBAL`. Sequence cabang yang belum dikonfigurasi memakai sequence global. Angka berlanjut lintas bulan, dan pemanggil wajib mengalokasikan nomor di transaksi yang sama dengan penyimpanan dokumen agar rollback tidak menghabiskan nomor.

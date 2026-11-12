@@ -454,4 +454,42 @@ Setelah teknologi dipilih dan produk selesai, agent memperbarui README ini denga
 
 ---
 
+## Teknologi yang Digunakan
+
+- TypeScript dan Next.js App Router
+- PostgreSQL dengan Drizzle ORM
+- `pg-boss` untuk antrean berbasis PostgreSQL
+- Docker Compose; Caddy direncanakan untuk HTTPS otomatis pada deployment produksi
+- Vitest untuk tes otomatis
+
+## Memulai Pengembangan
+
+Prasyarat: Node.js 24, npm, dan PostgreSQL. Atur `DATABASE_URL` ke basis data pengembangan, lalu jalankan:
+
+```sh
+npm ci
+npm run dev
+```
+
+Untuk menyiapkan PostgreSQL dan aplikasi melalui Docker:
+
+```sh
+docker compose up --build
+```
+
+Jalankan `npm run verify` terhadap basis data tes terpisah. Untuk PostgreSQL tes lokal melalui Compose:
+
+```sh
+docker compose --profile test up -d db-test
+TEST_DATABASE_URL=postgresql://petora:petora_test@localhost:5433/petora_test npm run verify
+```
+
+Variabel `TEST_DATABASE_URL` wajib menunjuk ke basis data yang namanya berakhiran `_test`; migrasi tes menolak nama lain. Konfigurasi dan kredensial pada `compose.yaml` hanya untuk pengembangan lokal; jangan gunakan untuk produksi. Panduan instalasi produksi satu perintah akan disediakan setelah alur deployment dibangun dan diuji.
+
+### Kunci autentikasi dua langkah
+
+Sebelum mengaktifkan 2FA, sediakan `TOTP_ENCRYPTION_KEY` dari secret manager atau hasil `openssl rand -hex 32` (64 karakter heksadesimal). Jangan commit kunci ini atau mengirimkannya ke klien. Simpan cadangan aman dan pertahankan nilainya: secret TOTP yang sudah tersimpan tidak dapat didekripsi jika kunci hilang atau berubah. Compose meneruskan variabel ini dari environment ke aplikasi; tanpa kunci, enrollment dan verifikasi 2FA ditolak dengan status konfigurasi yang jelas.
+
+---
+
 **PETORA INDONESIA.** Hak cipta dan lisensi dipegang oleh PETORA INDONESIA.

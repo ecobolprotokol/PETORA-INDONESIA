@@ -1,0 +1,58 @@
+# Matriks Keterlacakan
+
+Status `belum` berarti belum diimplementasikan. Status `berjalan` berarti pengerjaan belum memenuhi definisi selesai. Fitur hanya ditandai `selesai` setelah implementasi dan verifikasinya terbukti.
+
+## Checklist fase
+
+| Fase                           | Cakupan                                                                | Status   |
+| ------------------------------ | ---------------------------------------------------------------------- | -------- |
+| [x] 0 — Fondasi                | Stack, dokumentasi spesifikasi, aplikasi awal, lint/tes/CI, Docker     | selesai  |
+| [ ] 1 — Inti platform          | Autentikasi, cabang, peran/izin, audit, konfigurasi, notifikasi, setup | berjalan |
+| [ ] 2 — Data induk             | Pelanggan, hewan, produk, layanan                                      | belum    |
+| [ ] 3 — Stok dan pengadaan     | Ledger, batch/FEFO, transfer, pengadaan                                | belum    |
+| [ ] 4 — Kasir dan tagihan      | Shift, invoice, pembayaran, void/refund                                | belum    |
+| [ ] 5 — Klinik                 | Antrian, rekam medis, resep, vaksin, rawat inap, bedah                 | belum    |
+| [ ] 6 — Layanan dan jadwal     | Grooming, penitipan, booking, anti-bentrok                             | belum    |
+| [ ] 7 — Keuangan dan SDM       | Jurnal, laporan keuangan, komisi, staf                                 | belum    |
+| [ ] 8 — Integrasi              | Payment gateway, WhatsApp, email, webhook                              | belum    |
+| [ ] 9 — Portal pelanggan       | PWA, OTP, profil, riwayat, booking, pembayaran                         | belum    |
+| [ ] 10 — Dashboard dan laporan | Dashboard per peran/cabang dan ekspor                                  | belum    |
+| [ ] 11 — Pengerasan dan rilis  | Keamanan, E2E, instalasi, backup/restore, rilis                        | belum    |
+
+## Fase 0 — Fondasi
+
+| Sumber             | Kebutuhan                                          | Modul/artefak                                           | Verifikasi                                    | Status  |
+| ------------------ | -------------------------------------------------- | ------------------------------------------------------- | --------------------------------------------- | ------- |
+| AGENT.md §5        | Stack dipilih dan dikunci                          | [ADR-001](./DECISIONS.md#adr-001-stack-aplikasi-petora) | Peninjauan keputusan                          | selesai |
+| AGENT.md §6 Fase 0 | Salinan spesifikasi produk tersedia                | [SPEC.md](./SPEC.md)                                    | Bandingkan dengan README produk               | selesai |
+| AGENT.md §6 Fase 0 | Struktur aplikasi, lint, tes, dan verifikasi lokal | `src/`, `package.json`, `Makefile`                      | `npm run verify`                              | selesai |
+| AGENT.md §6 Fase 0 | Token tema dasar tersedia                          | `src/app/globals.css`                                   | Build aplikasi                                | selesai |
+| AGENT.md §6 Fase 0 | Kerangka layanan kontainer tersedia                | `Dockerfile`, `compose.yaml`                            | Compose config/build dan build image produksi | selesai |
+| AGENT.md §6 Fase 0 | Catatan progres dan matriks dibuat                 | [PROGRESS.md](../PROGRESS.md), dokumen ini              | Tinjau berkas                                 | selesai |
+
+## Fase 1 — Inti platform
+
+| Kebutuhan                                                                                    | Modul/artefak                                                                                                              | Verifikasi                                                                                                                                                    | Status   |
+| -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| Bootstrap Owner satu kali dan profil bisnis awal                                             | Setup Owner + status sistem                                                                                                | Tes status dan integrasi API                                                                                                                                  | selesai  |
+| Hash kata sandi, login, sesi 12 jam, logout/revoke, pembatasan percobaan                     | Service autentikasi + sesi DB                                                                                              | Tes unit dan integrasi PostgreSQL                                                                                                                             | selesai  |
+| Audit pembuatan Owner, login, dan logout                                                     | Tabel audit                                                                                                                | Tes aksi, idempotensi logout, tanpa token/kata sandi                                                                                                          | selesai  |
+| Layar bootstrap/login dan dashboard terlindungi                                              | Halaman dan form staf                                                                                                      | Build dan tes API alur                                                                                                                                        | selesai  |
+| Owner tidak dapat dihapus, diturunkan peran, atau dinonaktifkan                              | Trigger basis data                                                                                                         | Tes integrasi PostgreSQL untuk operasi terlarang                                                                                                              | selesai  |
+| Model, daftar, dan tambah cabang dengan bypass Owner                                         | Tabel cabang, API, dan dashboard                                                                                           | Tes validasi, duplikasi kode, audit, serta akses                                                                                                              | selesai  |
+| Katalog izin untuk fitur aktif dan pemeriksaan backend                                       | Izin cabang, `access.manage`, `settings.manage`, `audit.read`, penanda risiko tinggi, service otorisasi                     | Tes delegasi admin, penolakan tanpa izin, bypass Owner, scope cabang dan pembatasan API                                                                       | selesai  |
+| Manajemen dasar staf: buat, lihat, aktif/nonaktif, dan cabut sesi saat perubahan sensitif    | API staf berizin `access.manage`, dashboard, service, Owner bypass                                                        | Tes API, audit, Owner protection, delegasi berizin, dan pencabutan sesi                                                                                      | selesai  |
+| Membuat, mengubah, dan mengklon peran kustom serta menetapkan beberapa peran/cakupan kepada staf | Tabel peran, izin, penugasan, API `access.manage`, dashboard                                                            | Tes izin terdaftar, audit perubahan, konflik nama, penolakan kewajiban 2FA untuk staf tanpa TOTP, dan lintas cabang                                           | selesai  |
+| Ubah profil/password staf dari antarmuka Owner                                               | Form manajemen staf                                                                                                        | Tes alur UI, pencabutan sesi, dan API                                                                                                                         | selesai  |
+| Daftar perangkat/sesi aktif, label peramban, pencabutan sesi sendiri                         | API sesi dan dashboard                                                                                                     | Tes sesi aktif, pencabutan, isolasi pengguna, tanpa token                                                                                                     | selesai  |
+| TOTP terenkripsi, challenge login, kode recovery sekali pakai, dan kebijakan wajib per peran | Migrasi `0008`, service/API autentikasi, UI dashboard/login, kebijakan penugasan peran                                     | Tes RFC 6238, enkripsi, enrollment, login, replay, recovery, batas percobaan, kebijakan peran, audit, dan pencabutan sesi; `npm run verify`                   | selesai  |
+| Cakupan record per cabang dan milik sendiri pada modul operasional                           | Lapisan akses data; filter cabang berdasarkan `created_by`                                                                 | Tes izin cabang milik sendiri dan isolasi cabang; cakupan modul operasional belum tersedia                                                                    | berjalan |
+| Katalog peran/izin lengkap, batas angka, PIN supervisor, pengecualian individu               | Matriks akses saat ini mencakup semua endpoint aktif; pengecualian per staf tersedia untuk izin terdaftar                   | Tes delegasi admin dan scope `own`, allow/deny, prioritas deny; izin domain, batas angka, PIN, dan modul operasional menunggu implementasi modul terkait        | berjalan |
+| Audit seluruh aksi sensitif                                                                  | Service audit, API `audit.read` berpaginasi, dan panel dashboard                                                          | Tes log login, staf, peran, pengecualian, pengaturan, dan 2FA; pagination stabil dan akses tanpa izin ditolak; cakupan modul operasional belum lengkap          | berjalan |
+| Pengaturan Super Admin, penomoran, lokalisasi, fitur                                         | Pengaturan bisnis dengan izin `settings.manage`: profil, pajak, warna/tema, bahasa/zona waktu, feature flags, penomoran   | Tes API, validasi, izin Owner/delegasi, sequence global/cabang, konkurensi, rollback tanpa celah, audit; logo/template dan pemakaian pada modul dokumen belum tersedia | berjalan |
+| Mesin template, notifikasi, retry, jam tenang                                                | Template + queue/scheduler                                                                                                 | Tes integrasi retry dan kebijakan pengiriman                                                                                                                  | belum    |
+| Wizard setup lengkap (cabang, zona waktu, bahasa, pajak, kesiapan koneksi)                   | Wizard tiga langkah, bootstrap Owner/cabang pertama, endpoint cek aplikasi dan basis data                                  | Tes integrasi bootstrap dan readiness; data contoh belum tersedia dan pemeriksaan dari jaringan penyedia webhook belum dapat dibuktikan                       | berjalan |
+
+## Fitur produk lainnya
+
+Fitur pada [SPEC.md](./SPEC.md) di luar irisan Fase 1 di atas belum diimplementasikan. Tambahkan baris modul dan tes saat tiap irisan vertikal dimulai; jangan mengklaim fitur setengah jadi sebagai selesai.
