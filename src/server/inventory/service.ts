@@ -202,7 +202,7 @@ export async function consumeFromBatches(
     sourceId: string;
     actorUserId: string;
     reason?: string;
-    movementType?: "adjustment_out" | "transfer_out" | "bundle_component_out";
+    movementType?: "adjustment_out" | "transfer_out" | "bundle_component_out" | "sale_out";
   },
 ) {
   const batches = await availableBatches(
@@ -430,6 +430,11 @@ export async function listInventoryCard(
       batchNumber: inventoryBatches.batchNumber,
       movementType: inventoryMovements.movementType,
       quantityDelta: inventoryMovements.quantityDelta,
+      balanceAfter: sql<string>`SUM(${inventoryMovements.quantityDelta}) OVER (
+        PARTITION BY ${inventoryMovements.batchId}
+        ORDER BY ${inventoryMovements.createdAt}, ${inventoryMovements.id}
+        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+      )::text`,
       unitCostCents: inventoryMovements.unitCostCents,
       sourceType: inventoryMovements.sourceType,
       sourceId: inventoryMovements.sourceId,
@@ -461,6 +466,116 @@ export async function listInventoryCard(
       metadata: { warehouseId, movementCount: String(result.length) },
     });
   return result;
+}
+
+function addDaysToDate(date: string, days: number) {
+  const [year, month, day] = date.split("-").map(Number);
+  const value = new Date(Date.UTC(year ?? 0, (month ?? 1) - 1, (day ?? 1) + days));
+  return value.toISOString().slice(0, 10);
+}
+
+export async function listInventoryReports(
+  warehouseId: string,
+  timezone: string,
+  expiryDays: number,
+  slowDays: number,
+  actorUserId: string,
+) {
+  const today = dateAtTimezone(timezone);
+  const expiryThrough = addDaysToDate(today, expiryDays);
+  const slowCutoff = new Date(Date.now() - slowDays * 24 * 60 * 60 * 1000);
+  const lastOutboundAt = sql<Date | null>`MAX(
+    CASE WHEN ${inventoryMovements.quantityDelta} < 0 THEN ${inventoryMovements.createdAt} END
+  )`;
+
+  const [expiringBatches, slowMovingProducts] = await Promise.all([
+    getDatabase()
+      .select({
+        batchId: inventoryBatches.id,
+        productId: inventoryBatches.productId,
+        productName: products.name,
+        sku: products.sku,
+        variantId: inventoryBatches.variantId,
+        variantName: productVariants.name,
+        batchNumber: inventoryBatches.batchNumber,
+        expiresOn: inventoryBatches.expiresOn,
+        quantity: sql<string>`COALESCE(SUM(${inventoryMovements.quantityDelta}), 0)::text`,
+      })
+      .from(inventoryBatches)
+      .innerJoin(products, eq(inventoryBatches.productId, products.id))
+      .leftJoin(productVariants, eq(inventoryBatches.variantId, productVariants.id))
+      .leftJoin(inventoryMovements, eq(inventoryMovements.batchId, inventoryBatches.id))
+      .where(
+        and(
+          eq(inventoryBatches.warehouseId, warehouseId),
+          sql`${inventoryBatches.expiresOn} IS NOT NULL`,
+          sql`${inventoryBatches.expiresOn} <= ${expiryThrough}`,
+        ),
+      )
+      .groupBy(
+        inventoryBatches.id,
+        inventoryBatches.productId,
+        products.name,
+        products.sku,
+        inventoryBatches.variantId,
+        productVariants.name,
+      )
+      .having(sql`COALESCE(SUM(${inventoryMovements.quantityDelta}), 0) > 0`)
+      .orderBy(asc(inventoryBatches.expiresOn), asc(products.name))
+      .limit(500),
+    getDatabase()
+      .select({
+        productId: inventoryBatches.productId,
+        productName: products.name,
+        sku: products.sku,
+        variantId: inventoryBatches.variantId,
+        variantName: productVariants.name,
+        currentQuantity: sql<string>`COALESCE(SUM(${inventoryMovements.quantityDelta}), 0)::text`,
+        batchCount: sql<number>`count(DISTINCT ${inventoryBatches.id})::int`,
+        lastOutboundAt,
+      })
+      .from(inventoryBatches)
+      .innerJoin(products, eq(inventoryBatches.productId, products.id))
+      .leftJoin(productVariants, eq(inventoryBatches.variantId, productVariants.id))
+      .leftJoin(inventoryMovements, eq(inventoryMovements.batchId, inventoryBatches.id))
+      .where(eq(inventoryBatches.warehouseId, warehouseId))
+      .groupBy(
+        inventoryBatches.productId,
+        products.name,
+        products.sku,
+        inventoryBatches.variantId,
+        productVariants.name,
+      )
+      .having(
+        sql`COALESCE(SUM(${inventoryMovements.quantityDelta}), 0) > 0
+          AND (${lastOutboundAt} IS NULL OR ${lastOutboundAt} < ${slowCutoff})`,
+      )
+      .orderBy(asc(lastOutboundAt), asc(products.name))
+      .limit(500),
+  ]);
+  await getDatabase()
+    .insert(auditEvents)
+    .values({
+      actorUserId,
+      action: "inventory.reports_listed",
+      targetType: "inventory_reports",
+      metadata: {
+        warehouseId,
+        expiryDays: String(expiryDays),
+        slowDays: String(slowDays),
+        expiringBatchCount: String(expiringBatches.length),
+        slowMovingProductCount: String(slowMovingProducts.length),
+      },
+    });
+  return {
+    today,
+    expiryThrough,
+    expiringBatches: expiringBatches.map((batch) => ({
+      ...batch,
+      isExpired: batch.expiresOn !== null && batch.expiresOn < today,
+    })),
+    slowMovingProducts,
+  };
 }
 
 export async function listInventoryReorderLevels(warehouseId: string) {
@@ -737,8 +852,13 @@ export async function consumeInventory(input: {
 
 export async function getWarehouseBranchId(warehouseId: string) {
   const [warehouse] = await getDatabase()
-    .select({ id: warehouses.id, branchId: warehouses.branchId })
+    .select({
+      id: warehouses.id,
+      branchId: warehouses.branchId,
+      timezone: branches.timezone,
+    })
     .from(warehouses)
+    .innerJoin(branches, eq(warehouses.branchId, branches.id))
     .where(and(eq(warehouses.id, warehouseId), eq(warehouses.isActive, true)))
     .limit(1);
   return warehouse ?? null;

@@ -1259,6 +1259,9 @@ describe("staff authentication with PostgreSQL", () => {
         { key: "inventory.transfer", branchScoped: true, supportsOwnScope: false, highRisk: true },
         { key: "pets.manage", branchScoped: false, supportsOwnScope: true, highRisk: true },
         { key: "pets.read", branchScoped: false, supportsOwnScope: true, highRisk: true },
+        { key: "pos.manage", branchScoped: true, supportsOwnScope: false, highRisk: true },
+        { key: "pos.read", branchScoped: true, supportsOwnScope: false, highRisk: false },
+        { key: "pos.refund", branchScoped: true, supportsOwnScope: false, highRisk: true },
         { key: "procurement.approve", branchScoped: true, supportsOwnScope: false, highRisk: true },
         {
           key: "procurement.cost.read",

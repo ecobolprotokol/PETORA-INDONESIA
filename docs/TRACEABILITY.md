@@ -9,8 +9,8 @@ Status `belum` berarti belum diimplementasikan. Status `berjalan` berarti penger
 | [x] 0 — Fondasi                | Stack, dokumentasi spesifikasi, aplikasi awal, lint/tes/CI, Docker     | selesai  |
 | [x] 1 — Inti platform          | Autentikasi, cabang, peran/izin, audit, konfigurasi, notifikasi, setup | selesai  |
 | [x] 2 — Data induk             | Pelanggan, hewan, produk, layanan                                      | selesai  |
-| [ ] 3 — Stok dan pengadaan     | Ledger, batch/FEFO, transfer, pengadaan                                | berjalan |
-| [ ] 4 — Kasir dan tagihan      | Shift, invoice, pembayaran, void/refund                                | belum    |
+| [x] 3 — Stok dan pengadaan     | Ledger, batch/FEFO, transfer, pengadaan                                | selesai  |
+| [ ] 4 — Kasir dan tagihan      | Shift, invoice, pembayaran, void/refund                                | berjalan |
 | [ ] 5 — Klinik                 | Antrian, rekam medis, resep, vaksin, rawat inap, bedah                 | belum    |
 | [ ] 6 — Layanan dan jadwal     | Grooming, penitipan, booking, anti-bentrok                             | belum    |
 | [ ] 7 — Keuangan dan SDM       | Jurnal, laporan keuangan, komisi, staf                                 | belum    |
@@ -48,7 +48,7 @@ Status `belum` berarti belum diimplementasikan. Status `berjalan` berarti penger
 | TOTP terenkripsi, challenge login, kode recovery sekali pakai, dan kebijakan wajib per peran | Migrasi `0008`, service/API autentikasi, UI dashboard/login, kebijakan penugasan peran                                     | Tes RFC 6238, enkripsi, enrollment, login, replay, recovery, batas percobaan, kebijakan peran, audit, dan pencabutan sesi; `npm run verify`                   | selesai  |
 | Cakupan record pada modul aktif                                                             | `branches.read` dan `customers.read/manage` menerapkan scope; pelanggan difilter berdasarkan `customers.created_by` | Tes isolasi `own`, deny per cabang, dan penolakan edit lintas owner. Modul domain baru wajib menambahkan scope saat dibangun                              | selesai  |
 | Fondasi katalog izin, batas finansial, PIN supervisor, dan pengecualian individu               | Izin aktif terdaftar; pengecualian per staf berlaku pada izin terdaftar; PIN supervisor di-hash scrypt, diatur melalui API `/api/supervisor/pin`, dan dicatat di audit; `authorizeStaff` mengembalikan batas paling ketat dari grant peran/pengecualian | Tes delegasi, scope `own`, allow/deny, prioritas deny, serta siklus PIN (atur, verifikasi, reset, kegagalan) | selesai  |
-| Penegakan batas finansial dan persetujuan PIN pada aksi transaksi                             | Belum ada modul kasir/refund/void/transfer yang memakai batas dari `authorizeStaff` atau meminta persetujuan supervisor | Dijadwalkan dan diuji bersama alur transaksi Fase 4; konfigurasi saja tidak dianggap penegakan | Fase 4 |
+| Penegakan batas finansial dan persetujuan PIN pada aksi transaksi                             | Checkout diskon, refund, dan void memakai grant `authorizeStaff` serta PIN supervisor | Tes diskon/refund terlampaui dan verifikasi integrasi Fase 4 | berjalan |
 | Audit aksi sensitif pada modul aktif                                                         | Service audit, API `audit.read` berpaginasi, panel dashboard, audit PIN gagal, pelanggan, dan data contoh                 | Tes log login, staf, peran, pengecualian, pengaturan, 2FA, PIN gagal, akses/buat/ubah pelanggan, serta muat/hapus data contoh tanpa nilai kontak            | selesai  |
 | Pengaturan Super Admin, penomoran, lokalisasi, fitur                                         | Pengaturan bisnis dengan izin `settings.manage`: profil, pajak, warna/tema, bahasa/zona waktu, feature flags, penomoran, logo, dan template dokumen (invoice, kuitansi, sertifikat) | Tes API, validasi, izin Owner/delegasi, sequence global/cabang, konkurensi, rollback tanpa celah, audit; logo/template sudah tersedia dan dipakai pada halaman pengaturan | selesai  |
 | Mesin template, notifikasi, retry, jam tenang                                                | Template in-app yang dapat dikelola Owner, pengiriman transaksional `pg-boss`, worker aplikasi, retry/backoff, dan jam tenang berdasarkan zona waktu bisnis | Tes render placeholder, perhitungan jam tenang, pembuatan job atomik, pengiriman worker, dan uji kegagalan/retry eksplisit; adapter kanal eksternal masih terbuka      | selesai |
@@ -80,11 +80,23 @@ Fase 1 menutup fondasi kebijakan, bukan aksi domain yang belum ada. Penegakan li
 | Supplier, permintaan/persetujuan, pesanan, penerimaan, retur, dan hutang | Service pengadaan, API, dashboard | Permintaan ditinjau staf berbeda; penerimaan idempoten; kuantitas berlebih ditolak; retur mengurangi saldo hutang dan stok | selesai |
 | Bundel dan komposisi | API bundel, editor dashboard, service komposisi | Siklus ditolak; konsumsi komponen atomik; kegagalan komponen kedua me-rollback seluruh konsumsi | selesai |
 | Akses domain dan privasi biaya | Katalog izin, route branch-scoped, API biaya persediaan/hutang | Kode route menegakkan scope cabang dan izin biaya; verifikasi integrasi PostgreSQL dan production build | selesai |
-| Tampilan kartu stok, laporan kedaluwarsa/lambat laku, dan label/barcode | Belum tersedia atau belum ditautkan pada dashboard | Tambahkan tes API/UI dan verifikasi saat dibangun | berjalan |
+| Tampilan kartu stok, laporan kedaluwarsa/lambat laku, dan label/barcode | Kartu stok dan laporan per gudang di dashboard; label produk/varian Code 39 Full ASCII dengan quiet zone | Tes PostgreSQL untuk saldo per batch, batch kedaluwarsa, dan barang lambat bergerak; tes encoding ASCII, Unicode tak didukung, dan barcode terlalu panjang; lint, typecheck, dan production build | selesai |
 | Pengurangan otomatis dari kasir, resep, atau pemakaian layanan | Integrasi ke domain transaksi, klinik, dan layanan | Diuji bersama fase pemakai; tidak diklaim oleh service stok fase ini | Fase 4/5/6 |
-| Gerbang verifikasi fase 3 | Lint, typecheck, unit, PostgreSQL, migrasi, build | `npm run verify`: 40 tes unit dan 40 tes integrasi lulus | selesai |
+| Gerbang verifikasi fase 3 | Lint, typecheck, unit, PostgreSQL, migrasi, build | `npm run verify`: 42 tes unit dan 42 tes integrasi lulus | selesai |
 
-Fase 3 masih berstatus berjalan karena kartu stok belum menjadi tampilan riwayat pada dashboard, laporan kedaluwarsa/barang lambat dan pencetakan label/barcode belum dibangun. Konsumsi bundel sudah tersedia secara atomik di service; pengaitan ke transaksi kasir/resep/pemakaian bahan menjadi pekerjaan fase domain terkait.
+Kartu stok, laporan, dan cetak label/barcode telah dibangun dan diverifikasi. Fase 3 selesai dan terverifikasi untuk domain inventori/pengadaan, termasuk mutasi stok, laporan, bundel, dan label. Pengaitan pengurangan stok otomatis ke penjualan, resep klinik, dan pemakaian layanan dikerjakan secara atomik bersama modul kasir, klinik, dan layanan pada Fase 4/5/6; integrasi tersebut bukan penghalang penutupan Fase 3.
+
+## Fase 4 — Kasir dan tagihan
+
+| Kebutuhan | Modul/artefak | Verifikasi | Status |
+| --------- | ------------- | ---------- | ------ |
+| Shift kasir, kas awal, mutasi kas masuk/keluar, dan rekonsiliasi penutupan | Migrasi `0028`–`0031`, API dan dashboard POS | `npm run verify`: lint, typecheck, tes unit/integrasi PostgreSQL, migrasi tes, dan production build lulus | berjalan |
+| Penjualan produk/layanan, pajak, diskon dengan batas izin/PIN, pelanggan/hewan, dan tier harga | Service POS transaksional, API checkout, katalog branch/tier, inventory ledger | Harga server-side, branch/tier precedence, validasi pelanggan/hewan, rollback stok kurang, diskon/PIN, dan audit; seluruh suite verifikasi lulus | berjalan |
+| Pelunasan piutang, pembayaran split, dan transaksi hold/resume | API pembayaran dan resume, komponen dashboard POS | Tes pembayaran split, idempotensi, hold tanpa pengurangan stok, pemeriksaan stok saat resume; seluruh suite verifikasi lulus | berjalan |
+| Refund/void/retur, approval batas refund/void, dan pengembalian stok per batch | API refund/void, tabel refund, ledger `sale_return_in`, izin `pos.refund` | Tes retur parsial, stok balik batch asal, pembayaran refund, limit/PIN, void belum dibayar, dan idempotensi; seluruh suite verifikasi lulus | berjalan |
+| Struk/invoice dan cetak ulang | Endpoint detail penjualan dan jendela cetak dashboard | Typecheck, integration test, dan production build lulus; angka memakai snapshot transaksi | berjalan |
+| Promo terjadwal, voucher, poin/member, dan integrasi rekening deposit | Belum diimplementasikan | Tes diskon promosi, pemakaian voucher, ledger poin/deposit, dan rollback | belum |
+| Provider pembayaran online dan webhook | Di luar Fase 4; adapter provider pada Fase 8 | Uji tanda tangan webhook, idempotensi, dan rekonsiliasi pada Fase 8 | Fase 8 |
 
 ## Fitur produk lainnya
 

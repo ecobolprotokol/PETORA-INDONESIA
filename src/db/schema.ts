@@ -69,6 +69,7 @@ export const documentNumberSequences = pgTable(
         | "goods_receipt"
         | "supplier_return"
         | "receipt"
+        | "refund"
       >()
       .notNull(),
     branchId: uuid("branch_id").references(() => branches.id, { onDelete: "restrict" }),
@@ -539,6 +540,8 @@ export const inventoryMovements = pgTable(
         | "supplier_return"
         | "bundle_component_in"
         | "bundle_component_out"
+        | "sale_out"
+        | "sale_return_in"
       >()
       .notNull(),
     quantityDelta: numeric("quantity_delta", { precision: 14, scale: 3 }).notNull(),
@@ -847,6 +850,226 @@ export const stocktakeLines = pgTable(
     unique("stocktake_lines_batch_unique").on(table.stocktakeId, table.batchId),
     index("stocktake_lines_stocktake_idx").on(table.stocktakeId),
   ],
+);
+
+export const posShifts = pgTable(
+  "pos_shifts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id, { onDelete: "restrict" }),
+    warehouseId: uuid("warehouse_id")
+      .notNull()
+      .references(() => warehouses.id, { onDelete: "restrict" }),
+    cashierId: uuid("cashier_id")
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: "restrict" }),
+    status: text("status").$type<"open" | "closed">().notNull().default("open"),
+    openingCashCents: bigint("opening_cash_cents", { mode: "number" }).notNull(),
+    closingCashCents: bigint("closing_cash_cents", { mode: "number" }),
+    expectedCashCents: bigint("expected_cash_cents", { mode: "number" }),
+    openedAt: timestamp("opened_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+    closedAt: timestamp("closed_at", { withTimezone: true, mode: "date" }),
+    closeNotes: text("close_notes"),
+  },
+  (table) => [
+    index("pos_shifts_branch_status_idx").on(table.branchId, table.status, table.openedAt),
+  ],
+);
+
+export const posSales = pgTable(
+  "pos_sales",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    invoiceNumber: text("invoice_number").notNull().unique(),
+    idempotencyKey: text("idempotency_key").notNull().unique(),
+    requestFingerprint: text("request_fingerprint").notNull(),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id, { onDelete: "restrict" }),
+    warehouseId: uuid("warehouse_id")
+      .notNull()
+      .references(() => warehouses.id, { onDelete: "restrict" }),
+    shiftId: uuid("shift_id")
+      .notNull()
+      .references(() => posShifts.id, { onDelete: "restrict" }),
+    cashierId: uuid("cashier_id")
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: "restrict" }),
+    customerId: uuid("customer_id").references(() => customers.id, { onDelete: "set null" }),
+    petId: uuid("pet_id").references(() => pets.id, { onDelete: "set null" }),
+    priceTierId: uuid("price_tier_id").references(() => priceTiers.id, { onDelete: "restrict" }),
+    status: text("status")
+      .$type<"held" | "paid" | "partially_paid" | "voided" | "refunded">()
+      .notNull(),
+    subtotalCents: bigint("subtotal_cents", { mode: "number" }).notNull(),
+    discountCents: bigint("discount_cents", { mode: "number" }).notNull(),
+    taxCents: bigint("tax_cents", { mode: "number" }).notNull(),
+    totalCents: bigint("total_cents", { mode: "number" }).notNull(),
+    paidCents: bigint("paid_cents", { mode: "number" }).notNull().default(0),
+    refundedCents: bigint("refunded_cents", { mode: "number" }).notNull().default(0),
+    voidIdempotencyKey: text("void_idempotency_key"),
+    resumeIdempotencyKey: text("resume_idempotency_key"),
+    voidReason: text("void_reason"),
+    voidedBy: uuid("voided_by").references(() => staffUsers.id, { onDelete: "restrict" }),
+    voidedAt: timestamp("voided_at", { withTimezone: true, mode: "date" }),
+    taxRateBps: integer("tax_rate_bps").notNull(),
+    taxIncluded: boolean("tax_included").notNull(),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("pos_sales_branch_date_idx").on(table.branchId, table.createdAt),
+    index("pos_sales_shift_status_idx").on(table.shiftId, table.status, table.createdAt),
+  ],
+);
+
+export const posSaleLines = pgTable(
+  "pos_sale_lines",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    saleId: uuid("sale_id")
+      .notNull()
+      .references(() => posSales.id, { onDelete: "restrict" }),
+    itemType: text("item_type").$type<"product" | "service">().notNull(),
+    productId: uuid("product_id").references(() => products.id, { onDelete: "restrict" }),
+    variantId: uuid("variant_id").references(() => productVariants.id, { onDelete: "restrict" }),
+    serviceId: uuid("service_id").references(() => services.id, { onDelete: "restrict" }),
+    itemName: text("item_name").notNull(),
+    itemSku: text("item_sku").notNull(),
+    quantity: numeric("quantity", { precision: 14, scale: 3 }).notNull(),
+    unitPriceCents: bigint("unit_price_cents", { mode: "number" }).notNull(),
+    discountCents: bigint("discount_cents", { mode: "number" }).notNull(),
+    taxCents: bigint("tax_cents", { mode: "number" }).notNull(),
+    lineTotalCents: bigint("line_total_cents", { mode: "number" }).notNull(),
+    returnedQuantity: numeric("returned_quantity", { precision: 14, scale: 3 })
+      .notNull()
+      .default("0"),
+    notes: text("notes"),
+  },
+  (table) => [index("pos_sale_lines_sale_idx").on(table.saleId)],
+);
+
+export const posSaleStockAllocations = pgTable(
+  "pos_sale_stock_allocations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    saleLineId: uuid("sale_line_id")
+      .notNull()
+      .references(() => posSaleLines.id, { onDelete: "restrict" }),
+    batchId: uuid("batch_id")
+      .notNull()
+      .references(() => inventoryBatches.id, { onDelete: "restrict" }),
+    quantity: numeric("quantity", { precision: 14, scale: 3 }).notNull(),
+  },
+  (table) => [uniqueIndex("pos_sale_stock_allocation_unique").on(table.saleLineId, table.batchId)],
+);
+
+export const posPayments = pgTable(
+  "pos_payments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    saleId: uuid("sale_id")
+      .notNull()
+      .references(() => posSales.id, { onDelete: "restrict" }),
+    shiftId: uuid("shift_id")
+      .notNull()
+      .references(() => posShifts.id, { onDelete: "restrict" }),
+    idempotencyKey: text("idempotency_key").notNull(),
+    method: text("method")
+      .$type<
+        "cash" | "bank_transfer" | "card" | "qris" | "ewallet" | "virtual_account" | "deposit"
+      >()
+      .notNull(),
+    amountCents: bigint("amount_cents", { mode: "number" }).notNull(),
+    reference: text("reference"),
+    receivedBy: uuid("received_by")
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [index("pos_payments_sale_idx").on(table.saleId, table.createdAt)],
+);
+
+export const posRefunds = pgTable(
+  "pos_refunds",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    refundNumber: text("refund_number").notNull().unique(),
+    idempotencyKey: text("idempotency_key").notNull().unique(),
+    saleId: uuid("sale_id")
+      .notNull()
+      .references(() => posSales.id, { onDelete: "restrict" }),
+    shiftId: uuid("shift_id")
+      .notNull()
+      .references(() => posShifts.id, { onDelete: "restrict" }),
+    reason: text("reason").notNull(),
+    amountCents: bigint("amount_cents", { mode: "number" }).notNull(),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [index("pos_refunds_sale_idx").on(table.saleId, table.createdAt)],
+);
+
+export const posRefundLines = pgTable("pos_refund_lines", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  refundId: uuid("refund_id")
+    .notNull()
+    .references(() => posRefunds.id, { onDelete: "restrict" }),
+  saleLineId: uuid("sale_line_id")
+    .notNull()
+    .references(() => posSaleLines.id, { onDelete: "restrict" }),
+  quantity: numeric("quantity", { precision: 14, scale: 3 }).notNull(),
+  amountCents: bigint("amount_cents", { mode: "number" }).notNull(),
+});
+
+export const posRefundStockAllocations = pgTable("pos_refund_stock_allocations", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  refundLineId: uuid("refund_line_id")
+    .notNull()
+    .references(() => posRefundLines.id, { onDelete: "restrict" }),
+  saleLineId: uuid("sale_line_id")
+    .notNull()
+    .references(() => posSaleLines.id, { onDelete: "restrict" }),
+  batchId: uuid("batch_id")
+    .notNull()
+    .references(() => inventoryBatches.id, { onDelete: "restrict" }),
+  quantity: numeric("quantity", { precision: 14, scale: 3 }).notNull(),
+});
+
+export const posRefundPayments = pgTable("pos_refund_payments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  refundId: uuid("refund_id")
+    .notNull()
+    .references(() => posRefunds.id, { onDelete: "restrict" }),
+  method: text("method")
+    .$type<"cash" | "bank_transfer" | "card" | "qris" | "ewallet" | "virtual_account" | "deposit">()
+    .notNull(),
+  amountCents: bigint("amount_cents", { mode: "number" }).notNull(),
+  reference: text("reference"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+});
+
+export const posCashMovements = pgTable(
+  "pos_cash_movements",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    shiftId: uuid("shift_id")
+      .notNull()
+      .references(() => posShifts.id, { onDelete: "restrict" }),
+    movementType: text("movement_type").$type<"cash_in" | "cash_out">().notNull(),
+    amountCents: bigint("amount_cents", { mode: "number" }).notNull(),
+    reason: text("reason").notNull(),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [index("pos_cash_movements_shift_idx").on(table.shiftId, table.createdAt)],
 );
 
 export const inventoryAdjustments = pgTable(
@@ -1163,4 +1386,238 @@ export const authTotpRecoveryCodes = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
   },
   (table) => [primaryKey({ columns: [table.userId, table.codeHash] })],
+);
+
+export const posPromotions = pgTable(
+  "pos_promotions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    branchId: uuid("branch_id").references(() => branches.id, { onDelete: "restrict" }),
+    name: text("name").notNull(),
+    description: text("description"),
+    discountType: text("discount_type")
+      .$type<"percentage" | "fixed_amount" | "buy_x_get_y">()
+      .notNull(),
+    discountValue: numeric("discount_value", { precision: 14, scale: 3 }).notNull(),
+    minPurchaseCents: bigint("min_purchase_cents", { mode: "number" }),
+    maxDiscountCents: bigint("max_discount_cents", { mode: "number" }),
+    appliesTo: text("applies_to")
+      .$type<"all" | "products" | "services" | "categories" | "specific">()
+      .notNull(),
+    targetIds: uuid("target_ids").array().notNull().default(sql`ARRAY[]::uuid[]`),
+    priceTierId: uuid("price_tier_id").references(() => priceTiers.id, { onDelete: "restrict" }),
+    startsAt: timestamp("starts_at", { withTimezone: true, mode: "date" }).notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true, mode: "date" }).notNull(),
+    isActive: boolean("is_active").notNull().default(true),
+    priority: smallint("priority").notNull().default(0),
+    usageLimit: integer("usage_limit"),
+    usageCount: integer("usage_count").notNull().default(0),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: "restrict" }),
+    updatedBy: uuid("updated_by").references(() => staffUsers.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("pos_promotions_branch_active_idx")
+      .on(table.branchId, table.isActive, table.startsAt, table.endsAt)
+      .where(sql`${table.isActive}`),
+    index("pos_promotions_date_range_idx").on(table.startsAt, table.endsAt),
+  ],
+);
+
+export const posVouchers = pgTable(
+  "pos_vouchers",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    branchId: uuid("branch_id").references(() => branches.id, { onDelete: "restrict" }),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    discountType: text("discount_type").$type<"percentage" | "fixed_amount">().notNull(),
+    discountValue: numeric("discount_value", { precision: 14, scale: 3 }).notNull(),
+    minPurchaseCents: bigint("min_purchase_cents", { mode: "number" }),
+    maxDiscountCents: bigint("max_discount_cents", { mode: "number" }),
+    appliesTo: text("applies_to")
+      .$type<"all" | "products" | "services" | "categories" | "specific">()
+      .notNull(),
+    targetIds: uuid("target_ids").array().notNull().default(sql`ARRAY[]::uuid[]`),
+    startsAt: timestamp("starts_at", { withTimezone: true, mode: "date" }).notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true, mode: "date" }).notNull(),
+    isActive: boolean("is_active").notNull().default(true),
+    usageLimit: integer("usage_limit"),
+    usageCount: integer("usage_count").notNull().default(0),
+    perCustomerLimit: integer("per_customer_limit"),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: "restrict" }),
+    updatedBy: uuid("updated_by").references(() => staffUsers.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("pos_vouchers_code_branch_lower_unique").on(
+      table.branchId,
+      sql`lower(${table.code})`,
+    ),
+    index("pos_vouchers_branch_active_idx")
+      .on(table.branchId, table.isActive, table.startsAt, table.endsAt)
+      .where(sql`${table.isActive}`),
+  ],
+);
+
+export const posVoucherUsages = pgTable(
+  "pos_voucher_usages",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    voucherId: uuid("voucher_id")
+      .notNull()
+      .references(() => posVouchers.id, { onDelete: "restrict" }),
+    customerId: uuid("customer_id").references(() => customers.id, { onDelete: "set null" }),
+    saleId: uuid("sale_id")
+      .notNull()
+      .references(() => posSales.id, { onDelete: "restrict" }),
+    discountCents: bigint("discount_cents", { mode: "number" }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("pos_voucher_usages_voucher_idx").on(table.voucherId, table.usedAt),
+    index("pos_voucher_usages_customer_idx").on(table.customerId, table.usedAt),
+  ],
+);
+
+export const loyaltyAccounts = pgTable(
+  "loyalty_accounts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    customerId: uuid("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "restrict" }),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id, { onDelete: "restrict" }),
+    pointsBalance: integer("points_balance").notNull().default(0),
+    tier: text("tier")
+      .$type<"member" | "silver" | "gold" | "platinum">()
+      .notNull()
+      .default("member"),
+    enrolledAt: timestamp("enrolled_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    lastActivityAt: timestamp("last_activity_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: "restrict" }),
+    updatedBy: uuid("updated_by").references(() => staffUsers.id, { onDelete: "set null" }),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("loyalty_accounts_customer_branch_unique").on(table.customerId, table.branchId),
+    index("loyalty_accounts_branch_idx").on(table.branchId, table.tier),
+  ],
+);
+
+export const loyaltyTransactions = pgTable(
+  "loyalty_transactions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => loyaltyAccounts.id, { onDelete: "restrict" }),
+    type: text("type").$type<"earn" | "redeem" | "expire" | "adjust" | "refund">().notNull(),
+    points: integer("points").notNull(),
+    balanceAfter: integer("balance_after").notNull(),
+    sourceType: text("source_type")
+      .$type<"pos_sale" | "manual" | "promotion" | "voucher" | "system">()
+      .notNull(),
+    sourceId: uuid("source_id"),
+    reason: text("reason"),
+    actorUserId: uuid("actor_user_id").references(() => staffUsers.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("loyalty_transactions_account_idx").on(table.accountId, sql`${table.createdAt} DESC`),
+    index("loyalty_transactions_source_idx").on(table.sourceType, table.sourceId),
+  ],
+);
+
+export const loyaltyTiers = pgTable(
+  "loyalty_tiers",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id, { onDelete: "restrict" }),
+    name: text("name").$type<"member" | "silver" | "gold" | "platinum">().notNull(),
+    minPoints: integer("min_points").notNull(),
+    earnRateBps: integer("earn_rate_bps").notNull(),
+    redeemRateBps: integer("redeem_rate_bps").notNull(),
+    minRedeemPoints: integer("min_redeem_points").notNull().default(0),
+    benefits: jsonb("benefits").notNull().default(sql`'{}'::jsonb`),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: "restrict" }),
+    updatedBy: uuid("updated_by").references(() => staffUsers.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("loyalty_tiers_branch_name_unique").on(table.branchId, table.name)],
+);
+
+export const customerDeposits = pgTable(
+  "customer_deposits",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    customerId: uuid("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "restrict" }),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id, { onDelete: "restrict" }),
+    balanceCents: bigint("balance_cents", { mode: "number" }).notNull().default(0),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: "restrict" }),
+    updatedBy: uuid("updated_by").references(() => staffUsers.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("customer_deposits_customer_branch_unique").on(table.customerId, table.branchId),
+    index("customer_deposits_branch_idx").on(table.branchId, sql`${table.balanceCents} DESC`),
+  ],
+);
+
+export const customerDepositTransactions = pgTable(
+  "customer_deposit_transactions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    depositId: uuid("deposit_id")
+      .notNull()
+      .references(() => customerDeposits.id, { onDelete: "restrict" }),
+    type: text("type")
+      .$type<"topup" | "payment" | "refund" | "adjust" | "transfer_in" | "transfer_out">()
+      .notNull(),
+    amountCents: bigint("amount_cents", { mode: "number" }).notNull(),
+    balanceAfterCents: bigint("balance_after_cents", { mode: "number" }).notNull(),
+    sourceType: text("source_type")
+      .$type<"pos_sale" | "pos_refund" | "manual" | "transfer" | "system">()
+      .notNull(),
+    sourceId: uuid("source_id"),
+    reference: text("reference"),
+    actorUserId: uuid("actor_user_id")
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("customer_deposit_transactions_deposit_idx").on(
+      table.depositId,
+      sql`${table.createdAt} DESC`,
+    ),
+    index("customer_deposit_transactions_source_idx").on(table.sourceType, table.sourceId),
+  ],
 );

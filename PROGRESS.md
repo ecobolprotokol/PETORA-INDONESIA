@@ -2,7 +2,7 @@
 
 ## Fase saat ini
 
-Fase 3 — Stok dan pengadaan (Fase 1 dan Fase 2 selesai; Fase 3 sedang berjalan).
+Fase 4 — Kasir dan tagihan (Fase 1–3 selesai; Fase 4 sedang berjalan).
 
 ## Selesai
 
@@ -60,45 +60,52 @@ Fase 3 — Stok dan pengadaan (Fase 1 dan Fase 2 selesai; Fase 3 sedang berjalan
 - Gudang per cabang, batch dengan sumber supplier, dan ledger mutasi append-only; saldo tidak disimpan terpisah dari mutasi.
 - Pemakaian stok mengikuti FEFO dan zona waktu cabang, mengecualikan batch kedaluwarsa; metode HPP FIFO atau rata-rata tertimbang menggunakan aritmetika integer.
 - Penyesuaian masuk/keluar memiliki alasan, validasi batch, pemeriksaan stok, kebijakan limit/PIN supervisor, serta audit.
-- Kartu stok tersedia melalui API; ambang minimum dan saran pemesanan ulang tersedia melalui API dan dashboard.
+- Kartu stok ditampilkan di dashboard dengan saldo sesudah setiap mutasi per batch (maksimal 500 mutasi); ambang minimum dan saran pemesanan ulang tersedia melalui API dan dashboard.
+- Laporan stok menampilkan batch kedaluwarsa/segera kedaluwarsa dan produk lambat bergerak per gudang, mengikuti zona waktu cabang, diaudit, dan dibatasi izin cabang.
+- Label produk/varian dapat dicetak sebagai Code 39 Full ASCII dengan SKU/varian dan quiet zone; barcode non-ASCII atau terlalu panjang dilewati dengan pesan, bukan dicetak sebagai pola yang tidak dapat dipindai.
 - Transfer lintas gudang/cabang mencatat pengiriman per batch, penerimaan dengan selisih beralasan, dan otorisasi cabang pada kedua sisi.
 - Opname memiliki snapshot, pengajuan, persetujuan staf berbeda, pemeriksaan snapshot usang, dan mutasi koreksi yang tercatat.
 - Supplier, permintaan pembelian dan persetujuan, pesanan pembelian, penerimaan batch yang idempoten, retur supplier, serta ledger hutang tersedia melalui API dan dashboard.
 - Bundel mendukung editor komposisi, deteksi siklus, validasi varian, dan konsumsi komponen atomik pada service domain.
 - Dashboard stok/pengadaan menerapkan grants per cabang; akses biaya persediaan dan saldo hutang tetap dipisahkan oleh izin sensitif.
 - Migrasi `0022`–`0027` menambahkan domain fase 3 dan migrasi korektif untuk instalasi yang sebelumnya sudah mencatat migrasi, tetapi belum memiliki kolom asal supplier atau izin/sequence terbaru.
-- Verifikasi terakhir lulus: `npm run verify` (lint, typecheck, 40 tes unit, 40 tes integrasi PostgreSQL, migrasi tes, dan production build).
+- Verifikasi terakhir lulus: `npm run verify` (lint, typecheck, 42 tes unit, 41 tes integrasi PostgreSQL, migrasi tes, dan production build).
 
-## Gap Fase 3 yang masih berjalan
+## Integrasi stok lintas domain yang dijadwalkan
 
-- Kartu stok sudah tersedia di API tetapi belum ditautkan sebagai tampilan riwayat mutasi di dashboard.
-- Laporan kedaluwarsa dan barang lambat laku, serta cetak label/barcode belum dibangun.
-- Konsumsi bundel sudah atomik di service, tetapi pengurangan stok otomatis dari transaksi kasir, resep, atau pemakaian bahan menunggu modul transaksi/klinik/layanan pada fase terkait.
-- Fase 3 belum ditutup sampai gap yang masih dalam cakupan ini diselesaikan dan diverifikasi; integrasi lintas domain akan ditutup bersama fase pemakainya.
+- Pengurangan stok otomatis dari transaksi kasir, resep klinik, dan pemakaian bahan layanan dibangun secara atomik bersama modul pemakainya di Fase 4/5/6. Modul-modul itu belum tersedia, jadi integrasinya bukan penghalang Fase 3.
+
+## Fase 4 yang sedang dibangun
+
+- POS mencakup shift/kas dan rekonsiliasi, katalog harga cabang/tier, pelanggan/hewan, checkout pajak/diskon, pembayaran split dan piutang, serta konsumsi stok FEFO atomik.
+- Refund parsial mengembalikan stok ke batch asal dan mengurangi ekspektasi kas untuk refund tunai; void dibatasi pada penjualan belum dibayar. Hold/resume memeriksa ketersediaan stok saat dilanjutkan.
+- Pembayaran, refund, void, resume, dan checkout idempoten; batas diskon/refund/void dan PIN supervisor ditegakkan server-side. Struk transaksi dapat dicetak/cetak ulang.
+- Promo terjadwal, voucher, poin/member, pembayaran deposit, dan adapter payment gateway belum tersedia; integrasi provider tetap di Fase 8. Fase 4 belum ditutup.
+- Verifikasi penuh worktree lulus: lint, typecheck, 42 tes unit, migrasi tes, 42 tes integrasi PostgreSQL, dan production build.
 
 ## Pekerjaan lintas fase (bukan penghalang penutupan Fase 1)
 
-- Modul transaksi, rekam medis, stok, jadwal, dan keuangan belum dibangun; masing-masing harus menerapkan scope, audit, serta kontrol sensitif saat fase domain tersebut dimulai.
-- Penegakan batas finansial dan persetujuan PIN akan diterapkan bersama alur diskon/refund/void pada Fase 4; saat ini kebijakan akses sudah tersimpan, dihitung paling ketat, dan teruji, tetapi belum ada operasi transaksi untuk mengonsumsinya.
+- Modul rekam medis, jadwal, dan keuangan belum dibangun; masing-masing harus menerapkan scope, audit, serta kontrol sensitif saat fase domain tersebut dimulai.
+- Penegakan batas diskon/refund/void dan PIN supervisor sudah dipakai pada alur POS.
 - Provider webhook belum dapat diuji langsung karena integrasi dan kredensial provider termasuk Fase 8. Pemeriksaan readiness membuktikan endpoint publik melalui server dan jaringan browser, bukan provider.
 - Daftar rinci dan status tes: [TRACEABILITY.md](docs/TRACEABILITY.md).
 
 ## Berikutnya
 
-- Lanjutkan gap Fase 3: tampilan kartu stok, laporan kedaluwarsa/barang lambat, serta cetak label/barcode.
-- Terapkan batas finansial, persetujuan PIN, dan audit keputusan pada alur transaksi Fase 4.
+- Tutup sisa Fase 4: promo terjadwal, voucher, poin/member, dan kebijakan penggunaan deposit.
+- Verifikasi penuh terkini lulus, tetapi Fase 4 belum selesai selama promo terjadwal, voucher, poin/member, dan pembayaran deposit belum tersedia.
 - Uji konektivitas provider saat integrasi Fase 8 tersedia; pemeriksaan publik dari browser/server tidak mewakili uji provider.
 - Mesin notifikasi/retry sudah terverifikasi pada jalur utama; scope cabang/pelanggan, audit PIN gagal, audit pelanggan, dan readiness alamat publik memiliki cakupan tes terarah.
 
-## Status Fase 2
+## Status fase
 
-- **Selesai dan terverifikasi** sesuai irisan data induk pada [TRACEABILITY.md](docs/TRACEABILITY.md).
-- Fase 3 masih berjalan; alur inti stok dan pengadaan telah diverifikasi, dengan gap yang dicatat pada bagian Fase 3. Penegakan kebijakan transaksi tetap dijadwalkan pada Fase 4; tes provider pada Fase 8.
+- Fase 1, Fase 2, dan Fase 3 **selesai dan terverifikasi** sesuai [TRACEABILITY.md](docs/TRACEABILITY.md).
+- Fase 4 sedang berjalan. Pengurangan stok resep klinik dan pemakaian layanan tetap dijadwalkan bersama Fase 5/6; integrasi provider pembayaran tetap berada pada Fase 8.
 
 ## Keputusan penting
 
 - Stack terkunci di [ADR-001](docs/DECISIONS.md#adr-001-stack-aplikasi-petora).
 - Keputusan autentikasi awal ada di [ADR-002](docs/DECISIONS.md#adr-002-bootstrap-owner-dan-sesi-staf-awal).
 - Compose saat ini khusus pengembangan; kredensialnya tidak boleh digunakan di produksi.
-- Fase 1 dan Fase 2 selesai; produk belum siap produksi sampai modul dan gerbang rilis pada fase berikutnya selesai.
+- Fase 1–3 selesai; produk belum siap produksi sampai modul dan gerbang rilis pada fase berikutnya selesai.
 - `TOTP_ENCRYPTION_KEY` harus berupa 32 byte/64 karakter hex dari secret eksternal, dicadangkan, dan dipertahankan stabil; detail ada di [README](README.md#kunci-autentikasi-dua-langkah) dan [ADR-003](docs/DECISIONS.md#adr-003-autentikasi-dua-langkah-totp-staf).

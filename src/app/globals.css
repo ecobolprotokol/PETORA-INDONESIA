@@ -522,6 +522,12 @@ body {
   opacity: 0.65;
 }
 
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
 .management-list {
   display: grid;
   gap: var(--space-1);
@@ -573,6 +579,49 @@ body {
   font-size: 0.8rem;
 }
 
+.product-label-print {
+  display: none;
+}
+
+.product-label {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 1mm;
+  width: 50mm;
+  min-height: 30mm;
+  padding: 2mm;
+  overflow: hidden;
+  border: 0.2mm solid #000;
+  color: #000;
+  font-family: Arial, sans-serif;
+  text-align: center;
+}
+
+.product-label :where(strong, span) {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 8pt;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.product-label strong {
+  font-size: 9pt;
+}
+
+.product-label__barcode {
+  width: 100%;
+  height: 11mm;
+  fill: #000;
+}
+
+.product-label .product-label__value {
+  font-family: monospace;
+  font-size: 7pt;
+  letter-spacing: 0.4mm;
+}
+
 .branch-form {
   margin-top: var(--space-2);
 }
@@ -586,6 +635,35 @@ body {
   background: var(--color-surface);
   color: var(--color-ink);
   font: inherit;
+}
+
+@media print {
+  @page {
+    margin: 4mm;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .product-label-print,
+  .product-label-print * {
+    visibility: visible;
+  }
+
+  .product-label-print {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-columns: repeat(3, 50mm);
+    align-content: start;
+    justify-content: start;
+    gap: 2mm;
+  }
+
+  .product-label {
+    break-inside: avoid;
+  }
 }
 
 .welcome footer {

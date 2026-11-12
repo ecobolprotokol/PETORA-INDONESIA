@@ -39,6 +39,42 @@ type StockRow = {
   unitCostCents?: number;
   inventoryValueCents?: number;
 };
+type StockMovement = {
+  id: string;
+  batchId: string;
+  batchNumber: string;
+  movementType: string;
+  quantityDelta: string;
+  balanceAfter: string;
+  sourceType: string;
+  reason: string | null;
+  createdAt: string;
+  unitCostCents?: number;
+};
+type InventoryReports = {
+  today: string;
+  expiryThrough: string;
+  expiringBatches: Array<{
+    batchId: string;
+    productName: string;
+    sku: string;
+    variantName: string | null;
+    batchNumber: string;
+    expiresOn: string;
+    quantity: string;
+    isExpired: boolean;
+  }>;
+  slowMovingProducts: Array<{
+    productId: string;
+    productName: string;
+    sku: string;
+    variantId: string | null;
+    variantName: string | null;
+    currentQuantity: string;
+    batchCount: number;
+    lastOutboundAt: string | null;
+  }>;
+};
 type Supplier = { id: string; name: string; isActive: boolean };
 type Transfer = {
   id: string;
@@ -143,8 +179,11 @@ export function InventoryManagement({
 }: InventoryManagementProps) {
   const [branchId, setBranchId] = useState(branches[0]?.id ?? "");
   const [warehouseId, setWarehouseId] = useState("");
+  const [cardProductId, setCardProductId] = useState(products[0]?.id ?? "");
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [stock, setStock] = useState<StockRow[]>([]);
+  const [stockCard, setStockCard] = useState<StockMovement[]>([]);
+  const [reports, setReports] = useState<InventoryReports | null>(null);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [purchaseRequests, setPurchaseRequests] = useState<PurchaseRequestRecord[]>([]);
@@ -323,6 +362,52 @@ export function InventoryManagement({
     };
   }, [activeBranch, branchId, canManageSuppliers, refreshVersion, warehouseId, warehouses]);
 
+  useEffect(() => {
+    if (
+      !activeBranch ||
+      !warehouseId ||
+      !warehouses.some(
+        (warehouse) => warehouse.id === warehouseId && warehouse.branchId === branchId,
+      )
+    ) {
+      setStockCard([]);
+      setReports(null);
+      return;
+    }
+    let cancelled = false;
+    const canReadInventory =
+      activeBranch.inventoryRead || activeBranch.inventoryManage || activeBranch.inventoryAdjust;
+    async function loadReports() {
+      if (!canReadInventory) return;
+      try {
+        const [cardResult, reportResult] = await Promise.all([
+          cardProductId
+            ? request<{ movements: StockMovement[] }>(
+                `/api/inventory/stock/card?warehouseId=${encodeURIComponent(warehouseId)}&productId=${encodeURIComponent(cardProductId)}`,
+              )
+            : Promise.resolve({ movements: [] }),
+          request<{ reports: InventoryReports }>(
+            `/api/inventory/reports?warehouseId=${encodeURIComponent(warehouseId)}&refreshVersion=${refreshVersion}`,
+          ),
+        ]);
+        if (!cancelled) {
+          setStockCard(cardResult.movements);
+          setReports(reportResult.reports);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setMessage(
+            error instanceof Error ? error.message : "Laporan inventori tidak dapat dimuat.",
+          );
+        }
+      }
+    }
+    void loadReports();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeBranch, branchId, cardProductId, refreshVersion, warehouseId, warehouses]);
+
   async function submit(
     event: FormEvent<HTMLFormElement>,
     action: (form: FormData) => Promise<void>,
@@ -479,6 +564,130 @@ export function InventoryManagement({
               <p className="auth-card__description">Belum ada saldo stok pada gudang ini.</p>
             )}
           </article>
+
+          {activeBranch.inventoryRead ||
+          activeBranch.inventoryManage ||
+          activeBranch.inventoryAdjust ? (
+            <article className="management-card">
+              <h3>Kartu stok</h3>
+              <label>
+                Produk
+                <select
+                  onChange={(event) => setCardProductId(event.target.value)}
+                  value={cardProductId}
+                >
+                  <option value="">Pilih produk</option>
+                  {activeProducts.map((product) => (
+                    <option key={product.id} value={product.id}>
+                      {product.name} · {product.sku}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {stockCard.length ? (
+                <div className="table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Waktu</th>
+                        <th>Batch</th>
+                        <th>Mutasi</th>
+                        <th>Saldo batch</th>
+                        <th>Sumber / alasan</th>
+                        {activeBranch.inventoryCostRead ? <th>HPP/unit</th> : null}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {stockCard.map((movement) => (
+                        <tr key={movement.id}>
+                          <td>{new Date(movement.createdAt).toLocaleString("id-ID")}</td>
+                          <td>{movement.batchNumber}</td>
+                          <td>
+                            {movement.movementType} ({movement.quantityDelta})
+                          </td>
+                          <td>{movement.balanceAfter}</td>
+                          <td>{movement.reason ?? movement.sourceType}</td>
+                          {activeBranch.inventoryCostRead ? (
+                            <td>
+                              {movement.unitCostCents === undefined
+                                ? "—"
+                                : rupiah(movement.unitCostCents)}
+                            </td>
+                          ) : null}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="auth-card__description">
+                  Pilih produk untuk melihat hingga 500 mutasi terakhir.
+                </p>
+              )}
+            </article>
+          ) : null}
+
+          {reports ? (
+            <>
+              <article className="management-card">
+                <h3>Batch kedaluwarsa / segera kedaluwarsa</h3>
+                <p className="auth-card__description">
+                  Per tanggal {reports.today}; rentang sampai {reports.expiryThrough}.
+                </p>
+                {reports.expiringBatches.length ? (
+                  <ul className="management-list">
+                    {reports.expiringBatches.map((batch) => (
+                      <li key={batch.batchId}>
+                        <div>
+                          <strong>
+                            {batch.productName} · {batch.sku} · {batch.batchNumber}
+                          </strong>
+                          <span>
+                            {batch.isExpired ? "Kedaluwarsa" : "Kedaluwarsa pada"} {batch.expiresOn}{" "}
+                            · saldo {batch.quantity}
+                          </span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="auth-card__description">
+                    Tidak ada batch bersaldo yang kedaluwarsa dalam rentang ini.
+                  </p>
+                )}
+              </article>
+              <article className="management-card">
+                <h3>Barang lambat bergerak</h3>
+                <p className="auth-card__description">
+                  Barang bersaldo tanpa mutasi stok keluar selama 90 hari.
+                </p>
+                {reports.slowMovingProducts.length ? (
+                  <ul className="management-list">
+                    {reports.slowMovingProducts.map((product) => (
+                      <li key={`${product.productId}:${product.variantId ?? ""}`}>
+                        <div>
+                          <strong>
+                            {product.productName} · {product.sku}
+                            {product.variantName ? ` · ${product.variantName}` : ""}
+                          </strong>
+                          <span>
+                            Saldo {product.currentQuantity} pada {product.batchCount} batch ·{" "}
+                            {product.lastOutboundAt
+                              ? `stok keluar terakhir ${new Date(product.lastOutboundAt).toLocaleDateString("id-ID")}`
+                              : "belum pernah ada stok keluar"}
+                          </span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="auth-card__description">
+                    Tidak ada barang yang memenuhi kriteria lambat bergerak.
+                  </p>
+                )}
+              </article>
+            </>
+          ) : null}
 
           {activeBranch.inventoryRead || activeBranch.inventoryManage ? (
             <article className="management-card">

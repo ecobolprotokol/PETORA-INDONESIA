@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { getApiErrorMessage } from "@/components/auth/api-message";
+import { code39Modules } from "@/components/products/code39";
 import type { PermissionDataScope } from "@/server/access/permissions";
 import type { ProductRecord } from "@/server/products/service";
 
@@ -34,6 +35,30 @@ type PriceDraft = {
 };
 type VariantDraft = { id: string; name: string; sku: string; barcodes: string };
 type ConversionDraft = { id: string; unitId: string; conversionFactor: string };
+type ProductLabel = {
+  productName: string;
+  sku: string;
+  variantName: string | null;
+  barcode: string;
+};
+
+function Code39Barcode({ value }: { value: string }) {
+  const modules = code39Modules(value);
+  if (!modules) return null;
+  return (
+    <svg
+      aria-label={`Barcode ${value}`}
+      className="product-label__barcode"
+      role="img"
+      viewBox={`0 0 ${modules.length + 20} 36`}
+      preserveAspectRatio="none"
+    >
+      <path
+        d={modules.map((isBar, index) => (isBar ? `M${index + 10} 0h1v36h-1z` : "")).join("")}
+      />
+    </svg>
+  );
+}
 type BundleLineDraft = {
   id: string;
   productId: string;
@@ -96,6 +121,7 @@ export function ProductManagement({
   const [bundleMessage, setBundleMessage] = useState("");
   const [bundleLoading, setBundleLoading] = useState(false);
   const [bundleSubmitting, setBundleSubmitting] = useState(false);
+  const [printLabels, setPrintLabels] = useState<ProductLabel[] | null>(null);
 
   const visibleProducts = products.filter((product) =>
     `${product.name} ${product.sku} ${product.barcodes.map(({ barcode }) => barcode).join(" ")}`
@@ -112,6 +138,17 @@ export function ProductManagement({
       label: `${product.name} · ${variant.name}`,
     })),
   );
+
+  useEffect(() => {
+    if (!printLabels) return;
+    const timer = window.setTimeout(() => window.print(), 100);
+    const clearPrintLabels = () => setPrintLabels(null);
+    window.addEventListener("afterprint", clearPrintLabels);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("afterprint", clearPrintLabels);
+    };
+  }, [printLabels]);
 
   useEffect(() => {
     if (!bundleProductId || !manageScope) return;
@@ -386,8 +423,43 @@ export function ProductManagement({
     }
   }
 
+  function prepareLabels(product: ProductSummary) {
+    const printable = product.barcodes.flatMap(({ barcode, variantId }) => {
+      if (!code39Modules(barcode)) return [];
+      const variant = product.variants.find((item) => item.id === variantId);
+      return [
+        {
+          productName: product.name,
+          sku: variant?.sku ?? product.sku,
+          variantName: variant?.name ?? null,
+          barcode,
+        },
+      ];
+    });
+    const unsupportedCount = product.barcodes.length - printable.length;
+    setMessage(
+      unsupportedCount
+        ? `${unsupportedCount} barcode dilewati; hanya barcode ASCII yang cukup pendek untuk label Code 39 yang dicetak.`
+        : "",
+    );
+    if (printable.length) setPrintLabels(printable);
+  }
+
   return (
     <section aria-labelledby="products-title" className="customer-management">
+      {printLabels ? (
+        <div aria-hidden="true" className="product-label-print">
+          {printLabels.map((label) => (
+            <article className="product-label" key={label.barcode}>
+              <strong>{label.productName}</strong>
+              {label.variantName ? <span>{label.variantName}</span> : null}
+              <span>SKU: {label.sku}</span>
+              <Code39Barcode value={label.barcode} />
+              <span className="product-label__value">{label.barcode}</span>
+            </article>
+          ))}
+        </div>
+      ) : null}
       <div>
         <p className="welcome__eyebrow">DATA MASTER</p>
         <h2 id="products-title">Katalog produk</h2>
@@ -1011,12 +1083,23 @@ export function ProductManagement({
                     {!product.isActive ? <span>Nonaktif</span> : null}
                   </div>
                   {product.canEdit ? (
+                    <div className="staff-list__actions">
+                      <button
+                        className="button button--quiet"
+                        onClick={() => editProduct(product)}
+                        type="button"
+                      >
+                        Ubah
+                      </button>
+                    </div>
+                  ) : null}
+                  {product.barcodes.length ? (
                     <button
                       className="button button--quiet"
-                      onClick={() => editProduct(product)}
+                      onClick={() => prepareLabels(product)}
                       type="button"
                     >
-                      Ubah
+                      Cetak label/barcode
                     </button>
                   ) : null}
                 </li>

@@ -13,6 +13,7 @@ import {
   NotificationTemplateManagement,
 } from "@/components/notifications/notification-center";
 import { PetManagement } from "@/components/pets/pet-management";
+import { PosManagement } from "@/components/pos/pos-management";
 import { ProductManagement } from "@/components/products/product-management";
 import { ServiceManagement } from "@/components/services/service-management";
 import { SuperAdminSettings } from "@/components/settings/super-admin-settings";
@@ -104,6 +105,9 @@ export default async function DashboardPage() {
         procurementApprove,
         procurementCostRead,
         inventoryCostRead,
+        posRead,
+        posManage,
+        posRefund,
       ] = await Promise.all([
         authorizeStaff(staff, "inventory.read", branch.id),
         authorizeStaff(staff, "inventory.manage", branch.id),
@@ -115,6 +119,9 @@ export default async function DashboardPage() {
         authorizeStaff(staff, "procurement.approve", branch.id),
         authorizeStaff(staff, "procurement.cost.read", branch.id),
         authorizeStaff(staff, "inventory.cost.read", branch.id),
+        authorizeStaff(staff, "pos.read", branch.id),
+        authorizeStaff(staff, "pos.manage", branch.id),
+        authorizeStaff(staff, "pos.refund", branch.id),
       ]);
       return {
         id: branch.id,
@@ -129,6 +136,9 @@ export default async function DashboardPage() {
         procurementApprove: procurementApprove !== null,
         procurementCostRead: procurementCostRead !== null,
         inventoryCostRead: inventoryCostRead !== null,
+        posRead: posRead !== null,
+        posManage: posManage !== null,
+        posRefund: posRefund !== null,
       };
     }),
   );
@@ -312,6 +322,36 @@ export default async function DashboardPage() {
                 name: variantName,
               })),
             }))}
+        />
+      ) : null}
+      {inventoryBranchAccess.some(
+        (branch) => branch.posRead || branch.posManage || branch.posRefund,
+      ) ? (
+        <PosManagement
+          branches={inventoryBranchAccess
+            .filter(({ posRead, posManage, posRefund }) => posRead || posManage || posRefund)
+            .map(({ id, name, posRead, posManage, posRefund }) => ({
+              id,
+              name,
+              posRead,
+              posManage,
+              posRefund,
+            }))}
+          customers={customerSummaries.map(({ id, name }) => ({ id, name }))}
+          pets={petSummaries
+            .filter(({ status }) => status === "active")
+            .map(({ id, name, owners }) => ({
+              id,
+              name,
+              owners: owners.map(({ customerId, name: ownerName }) => ({
+                customerId,
+                name: ownerName,
+              })),
+            }))}
+          staffId={staff.id}
+          taxEnabled={settings.taxEnabled}
+          taxIncluded={settings.taxIncluded}
+          taxRateBps={settings.taxRateBps}
         />
       ) : null}
       {canManageAccess ? (

@@ -9,6 +9,7 @@ export const DOCUMENT_TYPES = [
   "goods_receipt",
   "supplier_return",
   "receipt",
+  "refund",
 ] as const;
 
 function isValidTimeZone(timezone: string): boolean {

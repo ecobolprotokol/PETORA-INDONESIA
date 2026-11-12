@@ -16,6 +16,8 @@ import {
   consumeInventory,
   createInventoryAdjustment,
   InventoryInsufficientStockError,
+  listInventoryCard,
+  listInventoryReports,
 } from "./service";
 
 const suffix = randomUUID();
@@ -26,6 +28,7 @@ let productId: string;
 let expiredBatchId: string;
 let fefoBatchId: string;
 let laterBatchId: string;
+let reportProductId: string;
 
 beforeAll(async () => {
   const [staff] = await getDatabase()
@@ -152,6 +155,9 @@ afterAll(async () => {
     if (productId) {
       await database.delete(products).where(eq(products.id, productId));
     }
+    if (reportProductId) {
+      await database.delete(products).where(eq(products.id, reportProductId));
+    }
     if (staffId) {
       await database.delete(staffUsers).where(eq(staffUsers.id, staffId));
     }
@@ -218,5 +224,90 @@ describe("inventory ledger and FEFO", () => {
       .from(inventoryBatches)
       .where(eq(inventoryBatches.batchNumber, "PIN-TEST"));
     expect(rows).toHaveLength(0);
+  });
+
+  it("reports expiring stock and slow-moving balances and calculates each batch balance", async () => {
+    const [reportProduct] = await getDatabase()
+      .insert(products)
+      .values({
+        name: `Report test ${suffix}`,
+        sku: `REPORT-${suffix}`,
+        productType: "general",
+        createdBy: staffId,
+        updatedBy: staffId,
+      })
+      .returning({ id: products.id });
+    reportProductId = reportProduct.id;
+
+    const [reportBatch] = await getDatabase()
+      .insert(inventoryBatches)
+      .values({
+        warehouseId,
+        productId: reportProductId,
+        batchNumber: `REPORT-${suffix}`,
+        expiresOn: new Intl.DateTimeFormat("en-CA", {
+          timeZone: "Asia/Jakarta",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).format(new Date()),
+        unitCostCents: 100,
+      })
+      .returning({ id: inventoryBatches.id });
+
+    const receiptDate = new Date(Date.now() - 120 * 24 * 60 * 60 * 1000);
+    const outboundDate = new Date(Date.now() - 100 * 24 * 60 * 60 * 1000);
+    await getDatabase()
+      .insert(inventoryMovements)
+      .values([
+        {
+          warehouseId,
+          productId: reportProductId,
+          batchId: reportBatch.id,
+          movementType: "receipt",
+          quantityDelta: "5",
+          unitCostCents: 100,
+          sourceType: "test_receipt",
+          sourceId: randomUUID(),
+          actorUserId: staffId,
+          createdAt: receiptDate,
+        },
+        {
+          warehouseId,
+          productId: reportProductId,
+          batchId: reportBatch.id,
+          movementType: "adjustment_out",
+          quantityDelta: "-1",
+          unitCostCents: 100,
+          sourceType: "test_adjustment",
+          sourceId: randomUUID(),
+          actorUserId: staffId,
+          createdAt: outboundDate,
+        },
+      ]);
+
+    const [card, reports] = await Promise.all([
+      listInventoryCard(warehouseId, reportProductId, false, staffId),
+      listInventoryReports(warehouseId, "Asia/Jakarta", 30, 90, staffId),
+    ]);
+    const reportBatchMovement = card.find(({ batchId }) => batchId === reportBatch.id);
+    expect(reportBatchMovement?.balanceAfter).toBe("4.000");
+    expect(reportBatchMovement).not.toHaveProperty("unitCostCents");
+    expect(reports.expiringBatches.map(({ batchId }) => batchId)).toContain(reportBatch.id);
+    expect(
+      reports.expiringBatches.find(({ batchId }) => batchId === reportBatch.id)?.isExpired,
+    ).toBe(false);
+    expect(
+      reports.expiringBatches.find(({ batchId }) => batchId === expiredBatchId)?.isExpired,
+    ).toBe(true);
+    expect(reports.slowMovingProducts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ productId: reportProductId, currentQuantity: "4.000" }),
+      ]),
+    );
+    const lastOutboundAt = reports.slowMovingProducts.find(
+      ({ productId }) => productId === reportProductId,
+    )?.lastOutboundAt;
+    expect(Date.parse(String(lastOutboundAt))).toBe(outboundDate.getTime());
   });
 });

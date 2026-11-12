@@ -26,6 +26,7 @@ const DOCUMENT_LABELS = {
   goods_receipt: "Penerimaan barang",
   supplier_return: "Retur supplier",
   receipt: "Kuitansi",
+  refund: "Refund",
 } as const;
 
 export function SuperAdminSettings({ settings, branches }: SuperAdminSettingsProps) {
@@ -327,6 +328,7 @@ export function SuperAdminSettings({ settings, branches }: SuperAdminSettingsPro
                 <option value="goods_receipt">Penerimaan barang</option>
                 <option value="supplier_return">Retur supplier</option>
                 <option value="receipt">Kuitansi</option>
+                <option value="refund">Refund</option>
               </select>
             </label>
             <label>

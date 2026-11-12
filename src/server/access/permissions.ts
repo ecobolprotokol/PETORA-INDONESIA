@@ -24,6 +24,9 @@ export const PERMISSION_KEYS = [
   "procurement.approve",
   "procurement.cost.read",
   "suppliers.manage",
+  "pos.read",
+  "pos.manage",
+  "pos.refund",
   "settings.manage",
 ] as const;
 
@@ -58,6 +61,9 @@ export const PERMISSIONS: Record<
   "procurement.approve": { branchScoped: true, supportsOwnScope: false, highRisk: true },
   "procurement.cost.read": { branchScoped: true, supportsOwnScope: false, highRisk: true },
   "suppliers.manage": { branchScoped: false, supportsOwnScope: false, highRisk: true },
+  "pos.read": { branchScoped: true, supportsOwnScope: false, highRisk: false },
+  "pos.manage": { branchScoped: true, supportsOwnScope: false, highRisk: true },
+  "pos.refund": { branchScoped: true, supportsOwnScope: false, highRisk: true },
   "settings.manage": { branchScoped: false, supportsOwnScope: false, highRisk: true },
 };
 
