@@ -25,6 +25,7 @@ import { POST as confirmTotpRoute } from "@/app/api/auth/totp/confirm/route";
 import { POST as disableTotpRoute } from "@/app/api/auth/totp/disable/route";
 import { POST as enrollTotpRoute } from "@/app/api/auth/totp/route";
 import { POST as createBranchRoute, GET as listBranchesRoute } from "@/app/api/branches/route";
+import { DELETE as deleteCustomerSamplesRoute } from "@/app/api/customers/samples/route";
 import { PATCH as updateDocumentSettingsRoute } from "@/app/api/settings/document-numbering/route";
 import { GET as getSettingsRoute, PATCH as updateSettingsRoute } from "@/app/api/settings/route";
 import { GET as getSetupReadinessRoute } from "@/app/api/setup/readiness/route";
@@ -41,6 +42,7 @@ import {
   authTotpRecoveryCodes,
   branches,
   businessSettings,
+  customers,
   documentNumberSequences,
   rolePermissions,
   staffNotifications,
@@ -113,6 +115,7 @@ async function clearTestData() {
   await database.execute(sql`ALTER TABLE staff_users DISABLE TRIGGER staff_users_protect_owner`);
 
   try {
+    await database.delete(customers);
     await database.delete(staffRoleAssignments);
     await database.delete(staffPermissionOverrides);
     await database.delete(rolePermissions);
@@ -415,6 +418,173 @@ describe("staff authentication with PostgreSQL", () => {
         .filter(({ action }) => action !== "branch.created")
         .every(({ metadata }) => Object.keys(metadata).length === 0),
     ).toBe(true);
+  });
+
+  it("loads optional customer samples during setup and lets only the Owner clear them", async () => {
+    await clearTestData();
+
+    const setup = await bootstrapOwner({ ...setupInput, includeSampleData: true });
+    const database = getDatabase();
+    const initialCustomers = await database
+      .select({
+        name: customers.name,
+        isSample: customers.isSample,
+        createdBy: customers.createdBy,
+      })
+      .from(customers)
+      .orderBy(customers.name);
+    expect(initialCustomers).toEqual([
+      { name: "Pelanggan Contoh 1", isSample: true, createdBy: setup.staff.id },
+      { name: "Pelanggan Contoh 2", isSample: true, createdBy: setup.staff.id },
+    ]);
+
+    await database.insert(customers).values({
+      name: "Pelanggan Reguler",
+      phone: "081234567899",
+      createdBy: setup.staff.id,
+      updatedBy: setup.staff.id,
+    });
+
+    const [regularStaff] = await database
+      .insert(staffUsers)
+      .values({
+        name: "Staf Non-Owner",
+        email: "non-owner-sample-test@example.test",
+        passwordHash: await hashPassword("kata-sandi-staf-yang-aman"),
+      })
+      .returning({ id: staffUsers.id });
+    if (!regularStaff) {
+      throw new Error("Akun staf tes gagal dibuat.");
+    }
+    const regularLogin = await loginStaff({
+      email: "non-owner-sample-test@example.test",
+      password: "kata-sandi-staf-yang-aman",
+    });
+    if (!regularLogin || "twoFactorRequired" in regularLogin) {
+      throw new Error("Login staf tes seharusnya berhasil.");
+    }
+
+    const forbiddenResponse = await deleteCustomerSamplesRoute(
+      jsonRequest(
+        "/api/customers/samples",
+        {},
+        `${SESSION_COOKIE_NAME}=${regularLogin.token}`,
+        "DELETE",
+      ),
+    );
+    expect(forbiddenResponse.status).toBe(403);
+
+    const ownerCookie = `${SESSION_COOKIE_NAME}=${setup.token}`;
+    const clearResponse = await deleteCustomerSamplesRoute(
+      jsonRequest("/api/customers/samples", {}, ownerCookie, "DELETE"),
+    );
+    expect(clearResponse.status).toBe(200);
+    await expect(clearResponse.json()).resolves.toEqual({ deleted: 2 });
+    await expect(
+      database.select({ name: customers.name, isSample: customers.isSample }).from(customers),
+    ).resolves.toEqual([{ name: "Pelanggan Reguler", isSample: false }]);
+
+    const sampleAudit = await database
+      .select({ action: auditEvents.action, metadata: auditEvents.metadata })
+      .from(auditEvents)
+      .where(
+        inArray(auditEvents.action, ["setup.sample_data_loaded", "setup.sample_data_cleared"]),
+      );
+    expect(sampleAudit.map(({ action }) => action).sort()).toEqual([
+      "setup.sample_data_cleared",
+      "setup.sample_data_loaded",
+    ]);
+    expect(sampleAudit.every(({ metadata }) => metadata.customers === "2")).toBe(true);
+  });
+
+  it("returns the tightest financial limits and combined supervisor PIN policy", async () => {
+    await clearTestData();
+
+    const owner = await bootstrapOwner(setupInput);
+    const [staff] = await getDatabase()
+      .insert(staffUsers)
+      .values({
+        name: "Staf Kasir",
+        email: "cashier-policy@example.test",
+        passwordHash: await hashPassword("kata-sandi-staf-yang-aman"),
+      })
+      .returning({ id: staffUsers.id, name: staffUsers.name });
+    if (!staff) {
+      throw new Error("Akun staf tes gagal dibuat.");
+    }
+
+    const firstRole = await createAccessRole(
+      {
+        name: "Kasir dengan batas awal",
+        description: "",
+        requiresTwoFactor: false,
+        permissions: [
+          {
+            key: "customers.manage",
+            dataScope: "all",
+            maxDiscountBps: 1_000,
+            maxRefundCents: 25_000,
+            maxVoidCents: 30_000,
+            maxTransferCents: 40_000,
+            requiresSupervisorPin: true,
+          },
+        ],
+      },
+      owner.staff.id,
+    );
+    const secondRole = await createAccessRole(
+      {
+        name: "Kasir dengan batas ketat",
+        description: "",
+        requiresTwoFactor: false,
+        permissions: [
+          {
+            key: "customers.manage",
+            dataScope: "own",
+            maxDiscountBps: 800,
+            maxRefundCents: null,
+            maxVoidCents: 10_000,
+            maxTransferCents: null,
+            requiresSupervisorPin: false,
+          },
+        ],
+      },
+      owner.staff.id,
+    );
+    await assignAccessRole(
+      { staffUserId: staff.id, roleId: firstRole.id, branchId: null },
+      owner.staff.id,
+    );
+    await assignAccessRole(
+      { staffUserId: staff.id, roleId: secondRole.id, branchId: null },
+      owner.staff.id,
+    );
+    await getDatabase().insert(staffPermissionOverrides).values({
+      staffUserId: staff.id,
+      permissionKey: "customers.manage",
+      effect: "allow",
+      dataScope: "own",
+      maxDiscountBps: 500,
+      maxRefundCents: 20_000,
+      maxVoidCents: null,
+      maxTransferCents: null,
+      requiresSupervisorPin: false,
+      reason: "Batas individu lebih ketat",
+      createdBy: owner.staff.id,
+      updatedBy: owner.staff.id,
+    });
+
+    await expect(
+      authorizeStaff({ id: staff.id, name: staff.name, isOwner: false }, "customers.manage"),
+    ).resolves.toEqual({
+      dataScope: "all",
+      branchScope: "all",
+      maxDiscountBps: 500,
+      maxRefundCents: 20_000,
+      maxVoidCents: 10_000,
+      maxTransferCents: 40_000,
+      requiresSupervisorPin: true,
+    });
   });
 
   it("serves the Owner audit log with stable cursor pagination and access control", async () => {
@@ -1026,6 +1196,8 @@ describe("staff authentication with PostgreSQL", () => {
         { key: "audit.read", branchScoped: false, highRisk: true },
         { key: "branches.manage", branchScoped: false, highRisk: true },
         { key: "branches.read", branchScoped: true, supportsOwnScope: true, highRisk: false },
+        { key: "customers.manage", branchScoped: false, supportsOwnScope: true, highRisk: true },
+        { key: "customers.read", branchScoped: false, supportsOwnScope: true, highRisk: true },
         { key: "settings.manage", branchScoped: false, highRisk: true },
       ],
     });

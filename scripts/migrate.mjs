@@ -4,13 +4,11 @@ import { fileURLToPath } from "node:url";
 import pg from "pg";
 
 const isTestDatabase = process.argv.includes("--test");
-const databaseUrl = isTestDatabase ? process.env.TEST_DATABASE_URL : process.env.DATABASE_URL;
-
-if (!databaseUrl) {
-  throw new Error(
-    `${isTestDatabase ? "TEST_DATABASE_URL" : "DATABASE_URL"} wajib diatur sebelum menjalankan migrasi.`,
-  );
-}
+const defaultDatabaseUrl = isTestDatabase
+  ? "postgresql://petora:petora_test@localhost:5433/petora_test"
+  : "postgresql://petora:petora_dev@localhost:5432/petora";
+const databaseUrl =
+  (isTestDatabase ? process.env.TEST_DATABASE_URL : process.env.DATABASE_URL) ?? defaultDatabaseUrl;
 
 if (isTestDatabase && !new URL(databaseUrl).pathname.endsWith("_test")) {
   throw new Error(

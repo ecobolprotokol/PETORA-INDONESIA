@@ -48,6 +48,12 @@ export async function verifySupervisorPin(staffUserId: string, pin: string): Pro
 
   const isValid = await verifyPassword(pin, staff.pinHash);
   if (!isValid) {
+    await getDatabase().insert(auditEvents).values({
+      actorUserId: staffUserId,
+      action: "staff.supervisor_pin_verification_failed",
+      targetType: "staff_user",
+      targetId: staffUserId,
+    });
     throw new SupervisorPinInvalidError("PIN supervisor tidak valid.");
   }
 

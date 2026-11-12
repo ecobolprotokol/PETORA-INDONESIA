@@ -3,6 +3,8 @@ export const PERMISSION_KEYS = [
   "audit.read",
   "branches.read",
   "branches.manage",
+  "customers.read",
+  "customers.manage",
   "settings.manage",
 ] as const;
 
@@ -16,6 +18,8 @@ export const PERMISSIONS: Record<
   "audit.read": { branchScoped: false, supportsOwnScope: false, highRisk: true },
   "branches.read": { branchScoped: true, supportsOwnScope: true, highRisk: false },
   "branches.manage": { branchScoped: false, supportsOwnScope: false, highRisk: true },
+  "customers.read": { branchScoped: false, supportsOwnScope: true, highRisk: true },
+  "customers.manage": { branchScoped: false, supportsOwnScope: true, highRisk: true },
   "settings.manage": { branchScoped: false, supportsOwnScope: false, highRisk: true },
 };
 

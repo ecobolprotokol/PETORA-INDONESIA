@@ -10,6 +10,7 @@ import {
   authTotpRecoveryCodes,
   branches,
   businessSettings,
+  customers,
   staffRoleAssignments,
   staffUsers,
   systemState,
@@ -212,6 +213,37 @@ export async function bootstrapOwner(input: SetupInput, userAgent?: string): Pro
         targetId: branch.id,
         metadata: { source: "initial_setup" },
       });
+
+      if (input.includeSampleData) {
+        const sampleCustomers = await tx
+          .insert(customers)
+          .values([
+            {
+              name: "Pelanggan Contoh 1",
+              phone: "081234567801",
+              email: null,
+              isSample: true,
+              createdBy: owner.id,
+              updatedBy: owner.id,
+            },
+            {
+              name: "Pelanggan Contoh 2",
+              phone: "081234567802",
+              email: null,
+              isSample: true,
+              createdBy: owner.id,
+              updatedBy: owner.id,
+            },
+          ])
+          .returning({ id: customers.id });
+
+        await tx.insert(auditEvents).values({
+          actorUserId: owner.id,
+          action: "setup.sample_data_loaded",
+          targetType: "customer_sample_set",
+          metadata: { customers: String(sampleCustomers.length) },
+        });
+      }
 
       return owner;
     });

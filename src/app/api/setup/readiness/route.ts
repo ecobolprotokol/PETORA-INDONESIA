@@ -2,14 +2,12 @@ import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDatabase } from "@/db";
 import { systemState } from "@/db/schema";
-import { getSetupStatus } from "@/server/auth/service";
+import { checkPublicReachability, getPublicAppOrigin } from "@/server/setup/readiness";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  await getSetupStatus();
-
   let databaseOk = false;
   try {
     const database = getDatabase();
@@ -19,13 +17,20 @@ export async function GET() {
       .where(eq(systemState.id, 1))
       .limit(1);
     databaseOk = true;
-  } catch {
+  } catch (error) {
+    console.error(
+      "Pemeriksaan kesiapan basis data gagal:",
+      error instanceof Error ? error.name : "UnknownError",
+    );
     databaseOk = false;
   }
 
   return NextResponse.json({
     ready: databaseOk,
+    application: true,
     database: databaseOk,
+    publicReachability: await checkPublicReachability(process.env.PUBLIC_APP_URL),
+    publicAppOrigin: getPublicAppOrigin(process.env.PUBLIC_APP_URL),
     checkedAt: new Date().toISOString(),
   });
 }

@@ -214,7 +214,7 @@ export async function enqueueStaffNotification(
   }
 }
 
-async function deliverNotification(notificationId: string): Promise<void> {
+export async function deliverNotification(notificationId: string): Promise<void> {
   await getDatabase().transaction(async (tx) => {
     const [notification] = await tx
       .select({
@@ -242,15 +242,44 @@ async function deliverNotification(notificationId: string): Promise<void> {
   });
 }
 
-async function recordNotificationFailure(notificationId: string, finalAttempt: boolean) {
-  await getDatabase()
+export async function handleNotificationDeliveryFailure(
+  notificationId: string,
+  finalAttempt: boolean,
+  errorCode = "delivery_error",
+): Promise<void> {
+  const [notification] = await getDatabase()
     .update(staffNotifications)
     .set({
       status: finalAttempt ? "failed" : "queued",
       attempts: sql`${staffNotifications.attempts} + 1`,
-      lastErrorCode: "delivery_error",
+      lastErrorCode: errorCode,
     })
-    .where(sql`${staffNotifications.id} = ${notificationId}`);
+    .where(
+      sql`${staffNotifications.id} = ${notificationId} AND ${staffNotifications.status} = 'queued'`,
+    )
+    .returning({
+      id: staffNotifications.id,
+      status: staffNotifications.status,
+      attempts: staffNotifications.attempts,
+      lastErrorCode: staffNotifications.lastErrorCode,
+    });
+
+  if (!notification) {
+    return;
+  }
+
+  await getDatabase()
+    .insert(auditEvents)
+    .values({
+      action: "notification.delivery_failed",
+      targetType: "staff_notification",
+      targetId: notificationId,
+      metadata: {
+        outcome: finalAttempt ? "failed" : "queued",
+        errorCode,
+        attempts: String(notification.attempts),
+      },
+    });
 }
 
 export async function startNotificationWorker(): Promise<void> {
@@ -265,9 +294,10 @@ export async function startNotificationWorker(): Promise<void> {
             try {
               await deliverNotification(job.data.notificationId);
             } catch (error) {
-              await recordNotificationFailure(
+              await handleNotificationDeliveryFailure(
                 job.data.notificationId,
                 job.retryCount >= job.retryLimit,
+                error instanceof Error ? error.name : "delivery_error",
               );
               throw error;
             }

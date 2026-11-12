@@ -7,6 +7,7 @@ services:
       NODE_ENV: development
       DATABASE_URL: postgresql://petora:petora_dev@db:5432/petora
       TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:-}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-}
     ports:
       - "3000:3000"
     depends_on:

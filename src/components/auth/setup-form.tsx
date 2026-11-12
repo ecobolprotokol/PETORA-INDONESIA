@@ -4,6 +4,14 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
 import { getApiErrorMessage } from "./api-message";
 
+type PublicReachabilityStatus =
+  | "verified"
+  | "not_configured"
+  | "invalid_configuration"
+  | "unreachable";
+
+type BrowserReachabilityStatus = "checking" | "verified" | "unreachable" | "unknown";
+
 export function SetupForm() {
   const router = useRouter();
   const [message, setMessage] = useState("");
@@ -11,14 +19,64 @@ export function SetupForm() {
   const [step, setStep] = useState(0);
   const [readiness, setReadiness] = useState<"idle" | "checking" | "ready" | "failed">("idle");
   const [publicOrigin, setPublicOrigin] = useState("");
+  const [configuredPublicOrigin, setConfiguredPublicOrigin] = useState<string | null>(null);
+  const [publicReachability, setPublicReachability] = useState<
+    PublicReachabilityStatus | "unknown"
+  >("unknown");
+  const [browserReachability, setBrowserReachability] =
+    useState<BrowserReachabilityStatus>("unknown");
+
+  async function checkFromBrowser(publicAppOrigin: string | null) {
+    if (!publicAppOrigin) {
+      setBrowserReachability("unknown");
+      return;
+    }
+
+    setBrowserReachability("checking");
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 5_000);
+    try {
+      const response = await fetch(new URL("/.well-known/petora-health", publicAppOrigin), {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      const result: unknown = await response.json();
+      if (
+        response.ok &&
+        typeof result === "object" &&
+        result !== null &&
+        "service" in result &&
+        result.service === "petora" &&
+        "status" in result &&
+        result.status === "ok"
+      ) {
+        setBrowserReachability("verified");
+      } else {
+        setBrowserReachability("unreachable");
+      }
+    } catch {
+      setBrowserReachability("unreachable");
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
+  }
 
   async function checkReadiness() {
     setReadiness("checking");
+    setConfiguredPublicOrigin(null);
+    setBrowserReachability("unknown");
     try {
       const response = await fetch("/api/setup/readiness", { cache: "no-store" });
-      const result: { ready?: boolean; database?: boolean } = await response
-        .json()
-        .catch(() => ({}));
+      const result: {
+        ready?: boolean;
+        database?: boolean;
+        publicReachability?: PublicReachabilityStatus;
+        publicAppOrigin?: string | null;
+      } = await response.json().catch(() => ({}));
+      setPublicReachability(result.publicReachability ?? "unknown");
+      const configuredOrigin = result.publicAppOrigin ?? null;
+      setConfiguredPublicOrigin(configuredOrigin);
+      await checkFromBrowser(configuredOrigin);
 
       if (!response.ok || result.ready !== true || result.database !== true) {
         setReadiness("failed");
@@ -60,6 +118,7 @@ export function SetupForm() {
       name: formData.get("name"),
       email: formData.get("email"),
       password: formData.get("password"),
+      includeSampleData: formData.get("includeSampleData") === "on",
     };
 
     try {
@@ -97,8 +156,41 @@ export function SetupForm() {
         </button>
         {readiness === "ready" ? (
           <p className="auth-form__hint" role="status">
-            Server dan basis data merespons dari alamat yang dibuka: {publicOrigin}. Pemeriksaan ini
-            memastikan akses dari jaringan Anda, bukan dari jaringan penyedia webhook.
+            Aplikasi dan basis data merespons dari alamat yang dibuka: {publicOrigin}.
+          </p>
+        ) : null}
+        {readiness === "ready" && publicReachability === "verified" ? (
+          <p className="auth-form__hint" role="status">
+            Alamat publik yang dikonfigurasi dapat dijangkau dari server aplikasi. Ini menguji rute
+            publik, bukan koneksi langsung dari penyedia webhook.
+          </p>
+        ) : null}
+        {readiness === "ready" && publicReachability === "not_configured" ? (
+          <p className="auth-form__hint" role="status">
+            Keterjangkauan dari luar belum diverifikasi. Atur PUBLIC_APP_URL ke alamat HTTPS publik
+            lalu jalankan pemeriksaan kembali.
+          </p>
+        ) : null}
+        {readiness === "ready" && publicReachability === "invalid_configuration" ? (
+          <p className="auth-form__message" role="alert">
+            PUBLIC_APP_URL harus berupa origin HTTPS publik tanpa path, kredensial, atau parameter.
+          </p>
+        ) : null}
+        {readiness === "ready" && publicReachability === "unreachable" ? (
+          <p className="auth-form__message" role="alert">
+            Server aplikasi tidak dapat menjangkau alamat publik yang dikonfigurasi. Periksa DNS,
+            TLS, firewall, dan routing reverse proxy.
+          </p>
+        ) : null}
+        {readiness === "ready" &&
+        configuredPublicOrigin !== null &&
+        browserReachability !== "unknown" ? (
+          <p className="auth-form__hint" role="status">
+            {browserReachability === "checking"
+              ? `Memeriksa ${configuredPublicOrigin} dari jaringan peramban...`
+              : browserReachability === "verified"
+                ? `${configuredPublicOrigin} merespons dari jaringan peramban ini. Koneksi dari penyedia webhook tetap belum diuji.`
+                : `${configuredPublicOrigin} tidak merespons dari jaringan peramban ini. Periksa CORS dan akses jaringan; koneksi penyedia webhook tetap belum diuji.`}
           </p>
         ) : null}
         {readiness === "failed" ? (
@@ -207,6 +299,13 @@ export function SetupForm() {
             type="password"
           />
           <span className="auth-form__hint">Gunakan sedikitnya 12 karakter.</span>
+        </label>
+        <label className="permission-option">
+          <input name="includeSampleData" type="checkbox" />
+          <span>
+            Muat data contoh pelanggan agar modul pelanggan dapat dicoba. Data contoh dapat
+            dibersihkan nanti dari dashboard.
+          </span>
         </label>
       </fieldset>
       {message ? (

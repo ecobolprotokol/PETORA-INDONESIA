@@ -116,6 +116,25 @@ export const branches = pgTable(
   ],
 );
 
+export const customers = pgTable(
+  "customers",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    name: text("name").notNull(),
+    phone: text("phone").notNull(),
+    email: text("email"),
+    isSample: boolean("is_sample").notNull().default(false),
+    createdBy: uuid("created_by").references(() => staffUsers.id, { onDelete: "set null" }),
+    updatedBy: uuid("updated_by").references(() => staffUsers.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("customers_created_by_created_at_idx").on(table.createdBy, sql`${table.createdAt} DESC`),
+    index("customers_name_search_idx").on(sql`lower(${table.name})`),
+  ],
+);
+
 export const accessPermissions = pgTable("access_permissions", {
   key: text("key").primaryKey(),
   description: text("description").notNull(),

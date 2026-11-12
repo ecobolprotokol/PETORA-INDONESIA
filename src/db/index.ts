@@ -4,17 +4,15 @@ import * as schema from "./schema";
 
 type Database = NodePgDatabase<typeof schema>;
 
+const DEFAULT_DATABASE_URL = "postgresql://petora:petora_dev@localhost:5432/petora";
+
 const globalForDatabase = globalThis as typeof globalThis & {
   petoraPool?: Pool;
   petoraDatabase?: Database;
 };
 
 export function getDatabase(): Database {
-  const connectionString = process.env.DATABASE_URL;
-
-  if (!connectionString) {
-    throw new Error("DATABASE_URL belum diatur.");
-  }
+  const connectionString = process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL;
 
   if (!globalForDatabase.petoraDatabase) {
     const pool = new Pool({ connectionString, max: 10 });

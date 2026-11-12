@@ -311,7 +311,7 @@ Sasaran: pemilik usaha non-teknis dapat memasang dan merawat sistem tanpa bantua
 
 - Dipasang di server milik bisnis sendiri dengan proses semudah mungkin.
 - **Panduan pengaturan awal** saat pertama dibuka: membuat akun Owner, mengisi profil bisnis, menambah cabang pertama, memilih zona waktu, bahasa, dan pajak. Panduan tertutup permanen setelah selesai.
-- Panduan juga memeriksa kesiapan koneksi, termasuk apakah alamat server dapat dijangkau dari luar, yang diperlukan agar notifikasi pembayaran masuk.
+- Panduan memeriksa aplikasi dan basis data dari browser. Jika `PUBLIC_APP_URL` HTTPS publik dikonfigurasi, pemeriksaan juga meminta endpoint health melalui alamat tersebut untuk menguji rute publik. Pemeriksaan ini bukan uji langsung dari jaringan penyedia webhook; integrasi webhook tetap memerlukan pengujian penyedia.
 - Pemilik dapat mengisi **data contoh** untuk mencoba sistem sebelum memasukkan data asli.
 - **Pembaruan aman:** cadangan dibuat dahulu, versi baru dipasang, dan sistem dapat dikembalikan bila ada masalah.
 - **Cadangan** dapat dijadwalkan dan dipulihkan. Dokumentasi menjelaskan langkahnya dengan jelas.
@@ -464,7 +464,7 @@ Setelah teknologi dipilih dan produk selesai, agent memperbarui README ini denga
 
 ## Memulai Pengembangan
 
-Prasyarat: Node.js 24, npm, dan PostgreSQL. Atur `DATABASE_URL` ke basis data pengembangan, lalu jalankan:
+Prasyarat: Node.js 24, npm, dan PostgreSQL. Jika Anda menjalankan aplikasi lokal dengan konfigurasi default di repository, `DATABASE_URL` dan `TEST_DATABASE_URL` akan otomatis memakai nilai Compose lokal yang telah disiapkan; Anda tetap bisa menimpanya lewat environment.
 
 ```sh
 npm ci
@@ -489,6 +489,10 @@ Variabel `TEST_DATABASE_URL` wajib menunjuk ke basis data yang namanya berakhira
 ### Kunci autentikasi dua langkah
 
 Sebelum mengaktifkan 2FA, sediakan `TOTP_ENCRYPTION_KEY` dari secret manager atau hasil `openssl rand -hex 32` (64 karakter heksadesimal). Jangan commit kunci ini atau mengirimkannya ke klien. Simpan cadangan aman dan pertahankan nilainya: secret TOTP yang sudah tersimpan tidak dapat didekripsi jika kunci hilang atau berubah. Compose meneruskan variabel ini dari environment ke aplikasi; tanpa kunci, enrollment dan verifikasi 2FA ditolak dengan status konfigurasi yang jelas.
+
+### Pemeriksaan alamat publik
+
+Untuk mengaktifkan pemeriksaan alamat publik di wizard, atur `PUBLIC_APP_URL` ke origin HTTPS publik aplikasi, misalnya `https://petora.example` (tanpa path). Server akan meminta `/.well-known/petora-health` dengan batas waktu lima detik. Status ini membuktikan endpoint merespons dari server aplikasi, bukan bahwa seluruh penyedia webhook dapat menjangkaunya.
 
 ---
 

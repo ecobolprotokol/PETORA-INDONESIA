@@ -1,7 +1,8 @@
-import { eq } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { getDatabase } from "@/db";
-import { staffUsers } from "@/db/schema";
+import { auditEvents, staffUsers } from "@/db/schema";
 import { hashPassword } from "@/server/auth/password";
 import {
   getSupervisorPinStatus,
@@ -22,7 +23,7 @@ beforeAll(async () => {
     .insert(staffUsers)
     .values({
       name: "Supervisor Test",
-      email: "supervisor-pin@example.com",
+      email: `supervisor-pin-${randomUUID()}@example.test`,
       passwordHash,
     })
     .returning({ id: staffUsers.id });
@@ -65,6 +66,17 @@ describe("supervisor pin", () => {
     await expect(verifySupervisorPin(actorId, "0000")).rejects.toBeInstanceOf(
       SupervisorPinInvalidError,
     );
+    const [event] = await getDatabase()
+      .select({ action: auditEvents.action })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.action, "staff.supervisor_pin_verification_failed"),
+          eq(auditEvents.targetId, actorId),
+        ),
+      )
+      .limit(1);
+    expect(event?.action).toBe("staff.supervisor_pin_verification_failed");
   });
 
   it("resets the PIN with the current PIN", async () => {

@@ -36,6 +36,7 @@ export const setupSchema = z
     taxEnabled: z.boolean(),
     taxRateBps: z.number().int().min(0).max(10_000),
     taxIncluded: z.boolean(),
+    includeSampleData: z.boolean().optional(),
   })
   .refine(({ taxEnabled, taxRateBps }) => !taxEnabled || taxRateBps > 0, {
     path: ["taxRateBps"],
