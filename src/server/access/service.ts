@@ -11,6 +11,7 @@ import {
   staffUsers,
 } from "@/db/schema";
 import type { AuthenticatedStaff } from "@/server/auth/service";
+import { enqueueStaffNotification } from "@/server/notifications/queue";
 import type { PermissionDataScope, PermissionKey } from "./permissions";
 import type {
   AssignRoleInput,
@@ -390,6 +391,7 @@ export async function assignAccessRole(input: AssignRoleInput, actorUserId: stri
       const [role] = await tx
         .select({
           id: accessRoles.id,
+          name: accessRoles.name,
           isActive: accessRoles.isActive,
           requiresTwoFactor: accessRoles.requiresTwoFactor,
         })
@@ -465,6 +467,10 @@ export async function assignAccessRole(input: AssignRoleInput, actorUserId: stri
         action: "access.role_assigned",
         targetType: "staff_role_assignment",
         targetId: assignment.id,
+      });
+
+      await enqueueStaffNotification(tx, staff.id, "access.role_assigned", {
+        roleName: role.name,
       });
 
       return assignment;

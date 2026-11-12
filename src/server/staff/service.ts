@@ -9,6 +9,7 @@ import {
   staffUsers,
 } from "@/db/schema";
 import { hashPassword } from "@/server/auth/password";
+import { enqueueStaffNotification } from "@/server/notifications/queue";
 import type { CreateStaffInput, UpdateStaffInput } from "./validation";
 
 export interface StaffUserSummary {
@@ -133,6 +134,8 @@ export async function createStaffAccount(input: CreateStaffInput, actorUserId: s
         targetType: "staff_user",
         targetId: staff.id,
       });
+
+      await enqueueStaffNotification(tx, staff.id, "staff.created", { name: staff.name });
 
       return staff;
     });

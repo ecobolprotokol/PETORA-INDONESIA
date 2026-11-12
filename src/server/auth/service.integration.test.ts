@@ -43,6 +43,7 @@ import {
   businessSettings,
   documentNumberSequences,
   rolePermissions,
+  staffNotifications,
   staffPermissionOverrides,
   staffRoleAssignments,
   staffUsers,
@@ -59,6 +60,7 @@ import {
   TwoFactorEnrollmentRequiredError,
 } from "@/server/access/service";
 import { createBranch } from "@/server/branches/service";
+import { listStaffNotifications, startNotificationWorker } from "@/server/notifications/queue";
 import { nextDocumentNumber } from "@/server/settings/numbering";
 import { getBusinessSettings } from "@/server/settings/service";
 import { listStaffUsers } from "@/server/staff/service";
@@ -135,6 +137,9 @@ async function clearTestData() {
         taxEnabled: false,
         taxRateBps: 0,
         taxIncluded: false,
+        quietHoursEnabled: false,
+        quietHoursStart: "22:00",
+        quietHoursEnd: "08:00",
         primaryColor: "#1E765D",
         theme: "system",
         updatedBy: null,
@@ -242,6 +247,27 @@ describe("staff authentication with PostgreSQL", () => {
       { staffUserId: adminStaff.id, roleId: adminRole.id, branchId: null },
       owner.staff.id,
     );
+    const [roleNotification] = await getDatabase()
+      .select({
+        title: staffNotifications.title,
+        body: staffNotifications.body,
+        status: staffNotifications.status,
+      })
+      .from(staffNotifications)
+      .where(eq(staffNotifications.recipientUserId, adminStaff.id))
+      .limit(1);
+    expect(roleNotification).toEqual({
+      title: "Peran diperbarui",
+      body: "Peran Super Admin Delegasi telah ditugaskan ke akun Anda.",
+      status: "queued",
+    });
+    await startNotificationWorker();
+    let inbox = await listStaffNotifications(adminStaff.id);
+    for (let attempt = 0; attempt < 60 && inbox[0]?.status === "queued"; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      inbox = await listStaffNotifications(adminStaff.id);
+    }
+    expect(inbox[0]?.status).toBe("delivered");
     const adminLogin = await loginStaff({ email: "admin@example.test", password });
     const regularLogin = await loginStaff({ email: "staff@example.test", password });
     if (
@@ -1302,6 +1328,9 @@ describe("staff authentication with PostgreSQL", () => {
       taxEnabled: true,
       taxRateBps: 1100,
       taxIncluded: true,
+      quietHoursEnabled: true,
+      quietHoursStart: "21:30",
+      quietHoursEnd: "07:15",
       primaryColor: "#006699",
       theme: "dark",
       features: { commissions: true, loyalty: false, inpatient: true },
@@ -1417,6 +1446,15 @@ describe("staff authentication with PostgreSQL", () => {
       jsonRequest("/api/settings", { ...updatedSettings, taxRateBps: 0 }, ownerCookie, "PATCH"),
     );
     expect(invalidTaxSettings.status).toBe(400);
+    const invalidQuietHours = await updateSettingsRoute(
+      jsonRequest(
+        "/api/settings",
+        { ...updatedSettings, quietHoursEnd: updatedSettings.quietHoursStart },
+        ownerCookie,
+        "PATCH",
+      ),
+    );
+    expect(invalidQuietHours.status).toBe(400);
 
     const staffPassword = "kata-sandi-staf-yang-aman";
     await createStaffRoute(

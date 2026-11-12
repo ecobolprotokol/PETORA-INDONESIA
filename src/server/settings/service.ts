@@ -26,6 +26,9 @@ export async function getBusinessSettings() {
       taxEnabled: businessSettings.taxEnabled,
       taxRateBps: businessSettings.taxRateBps,
       taxIncluded: businessSettings.taxIncluded,
+      quietHoursEnabled: businessSettings.quietHoursEnabled,
+      quietHoursStart: businessSettings.quietHoursStart,
+      quietHoursEnd: businessSettings.quietHoursEnd,
       primaryColor: businessSettings.primaryColor,
       theme: businessSettings.theme,
     })
@@ -95,6 +98,9 @@ export async function updateBusinessSettings(
         taxEnabled: input.taxEnabled,
         taxRateBps: input.taxRateBps,
         taxIncluded: input.taxIncluded,
+        quietHoursEnabled: input.quietHoursEnabled,
+        quietHoursStart: input.quietHoursStart,
+        quietHoursEnd: input.quietHoursEnd,
         primaryColor: input.primaryColor,
         theme: input.theme,
         updatedBy: actorUserId,
@@ -130,7 +136,15 @@ export async function updateBusinessSettings(
       targetType: "business_settings",
       targetId: "1",
       metadata: {
-        changed: ["businessName", "timezone", "locale", "tax", "branding", "features"].join(","),
+        changed: [
+          "businessName",
+          "timezone",
+          "locale",
+          "tax",
+          "branding",
+          "features",
+          "quietHours",
+        ].join(","),
       },
     });
   });

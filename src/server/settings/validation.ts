@@ -20,6 +20,9 @@ export const updateBusinessSettingsSchema = z
     taxEnabled: z.boolean(),
     taxRateBps: z.number().int().min(0).max(10_000),
     taxIncluded: z.boolean(),
+    quietHoursEnabled: z.boolean(),
+    quietHoursStart: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/u),
+    quietHoursEnd: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/u),
     primaryColor: z
       .string()
       .trim()
@@ -36,7 +39,15 @@ export const updateBusinessSettingsSchema = z
   .refine(({ taxEnabled, taxRateBps }) => !taxEnabled || taxRateBps > 0, {
     path: ["taxRateBps"],
     message: "Tarif pajak harus lebih dari nol jika pajak diaktifkan.",
-  });
+  })
+  .refine(
+    ({ quietHoursEnabled, quietHoursStart, quietHoursEnd }) =>
+      !quietHoursEnabled || quietHoursStart !== quietHoursEnd,
+    {
+      path: ["quietHoursEnd"],
+      message: "Jam mulai dan selesai tenang harus berbeda.",
+    },
+  );
 
 export const updateDocumentSequenceSchema = z
   .object({

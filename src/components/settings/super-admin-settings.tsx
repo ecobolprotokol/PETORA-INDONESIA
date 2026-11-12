@@ -68,6 +68,9 @@ export function SuperAdminSettings({ settings, branches }: SuperAdminSettingsPro
       taxEnabled: values.get("taxEnabled") === "on",
       taxRateBps: Math.round(taxPercent * 100),
       taxIncluded: values.get("taxIncluded") === "on",
+      quietHoursEnabled: values.get("quietHoursEnabled") === "on",
+      quietHoursStart: values.get("quietHoursStart"),
+      quietHoursEnd: values.get("quietHoursEnd"),
       primaryColor: values.get("primaryColor"),
       theme: values.get("theme"),
       features: {
@@ -147,6 +150,39 @@ export function SuperAdminSettings({ settings, branches }: SuperAdminSettingsPro
             <input defaultChecked={settings.taxIncluded} name="taxIncluded" type="checkbox" />
             <span>Harga sudah termasuk pajak</span>
           </label>
+          <fieldset className="permission-options">
+            <legend>Jam tenang untuk notifikasi</legend>
+            <label className="permission-option">
+              <input
+                defaultChecked={settings.quietHoursEnabled}
+                name="quietHoursEnabled"
+                type="checkbox"
+              />
+              <span>Tunda notifikasi selama jam tenang</span>
+            </label>
+            <label>
+              Mulai
+              <input
+                defaultValue={settings.quietHoursStart}
+                name="quietHoursStart"
+                required
+                type="time"
+              />
+            </label>
+            <label>
+              Selesai
+              <input
+                defaultValue={settings.quietHoursEnd}
+                name="quietHoursEnd"
+                required
+                type="time"
+              />
+            </label>
+            <p className="auth-card__description">
+              Mengikuti zona waktu default bisnis. Notifikasi dalam aplikasi akan ditunda selama
+              rentang ini.
+            </p>
+          </fieldset>
           <label>
             Warna aksen
             <input defaultValue={settings.primaryColor} name="primaryColor" type="color" />

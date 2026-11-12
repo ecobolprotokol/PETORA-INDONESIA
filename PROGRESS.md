@@ -32,20 +32,21 @@ Fase 1 — Inti platform.
 - Izin `branches.read` mendukung cakupan `own`; API daftar cabang hanya mengembalikan cabang aktif yang dibuat staf untuk scope ini.
 - Pengecualian izin per staf mendukung grant/deny pada izin yang tersedia, wajib beralasan, dibatasi cabang sesuai katalog, diaudit, dan deny eksplisit mengalahkan grant peran.
 - Owner atau staf yang diberi izin `audit.read` dapat meninjau log audit melalui API dan dashboard dengan pagination cursor; akses tanpa izin ditolak.
+- Template notifikasi in-app untuk akun baru dan penugasan peran dapat dikelola Owner; pesan dan job `pg-boss` dibuat dalam transaksi domain, worker mengirimkannya ke inbox staf, job menggunakan retry/backoff, dan jam tenang mengikuti zona waktu bisnis. Kanal WhatsApp/email tetap berada pada fase integrasi.
 - API setup/login/logout memeriksa Origin; halaman setup, login, dan dashboard terlindungi tersedia.
 - Migrasi SQL berurutan berjalan otomatis saat aplikasi start; migrasi tes dibatasi pada database berakhiran `_test`.
-- `npm run verify` terakhir lulus terhadap PostgreSQL nyata: 20 tes unit dan 9 tes integrasi, ditambah lint, cek tipe, build.
+- Verifikasi terbaru lulus: lint, cek tipe, 26 tes unit, migrasi tes, 9 tes integrasi PostgreSQL termasuk worker notifikasi, dan production build.
 - Image produksi terbaru menjalankan seluruh migrasi dan halaman login merespons HTTP 200.
 
 ## Fase 1 yang belum selesai
 
-- Cakupan record "milik sendiri" untuk modul selain cabang, katalog izin lengkap, batas angka, PIN supervisor, dan audit menyeluruh lintas aksi. Pengecualian per staf sudah tersedia untuk izin yang saat ini terdaftar.
-- Pengaturan Super Admin lanjutan (logo dan template dokumen yang dipakai generator), mesin template/notifikasi dengan queue/retry/jam tenang, dan wizard setup lengkap termasuk pemeriksaan keterjangkauan server dari luar.
+- Cakupan record "milik sendiri" untuk modul selain cabang, katalog izin domain, batas angka dan PIN supervisor yang diterapkan pada transaksi bisnis, serta audit aksi sensitif domain.
+- Pengaturan Super Admin lanjutan (logo dan template dokumen yang dipakai generator), pengujian eksplisit atas kegagalan/retry notifikasi, dan wizard setup lengkap termasuk pemeriksaan keterjangkauan server dari luar.
 - Daftar rinci dan status tes: [TRACEABILITY.md](docs/TRACEABILITY.md).
 
 ## Berikutnya
 
-- Lanjutkan Fase 1 dengan cakupan akses operasional, katalog izin/batas/PIN supervisor, audit lengkap, pengaturan Super Admin, notifikasi/queue, serta wizard setup.
+- Lanjutkan Fase 1 dengan cakupan akses operasional, katalog izin/batas/PIN supervisor, audit lengkap, pengaturan Super Admin, verifikasi kebijakan retry notifikasi, serta wizard setup.
 - Fase 1 tetap berjalan; autentikasi dua langkah dan kebijakan wajib per peran sudah tersedia, tetapi belum seluruh persyaratan inti platform terpenuhi.
 
 ## Gerbang Fase 2

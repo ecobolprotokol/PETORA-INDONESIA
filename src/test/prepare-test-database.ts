@@ -1,3 +1,6 @@
+import { afterAll } from "vitest";
+import { stopNotificationQueue } from "@/server/notifications/queue";
+
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
 
 if (!testDatabaseUrl) {
@@ -9,3 +12,5 @@ if (!new URL(testDatabaseUrl).pathname.endsWith("_test")) {
 }
 
 process.env.DATABASE_URL = testDatabaseUrl;
+
+afterAll(stopNotificationQueue);

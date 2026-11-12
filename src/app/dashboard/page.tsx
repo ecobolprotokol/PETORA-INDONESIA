@@ -6,6 +6,10 @@ import { LogoutButton } from "@/components/auth/logout-button";
 import { SessionManagement } from "@/components/auth/session-management";
 import { TwoFactorManagement } from "@/components/auth/two-factor-management";
 import { CreateBranchForm } from "@/components/branches/create-branch-form";
+import {
+  NotificationInbox,
+  NotificationTemplateManagement,
+} from "@/components/notifications/notification-center";
 import { SuperAdminSettings } from "@/components/settings/super-admin-settings";
 import { StaffManagement } from "@/components/staff/staff-management";
 import {
@@ -18,6 +22,7 @@ import {
 import { listAuditEvents } from "@/server/audit/service";
 import { getCurrentStaff, getCurrentStaffSessions } from "@/server/auth/cookies";
 import { getSetupStatus, getTotpStatus } from "@/server/auth/service";
+import { listNotificationTemplates, listStaffNotifications } from "@/server/notifications/queue";
 import { getBusinessSettings } from "@/server/settings/service";
 import { listStaffUsers } from "@/server/staff/service";
 
@@ -44,6 +49,10 @@ export default async function DashboardPage() {
   const canManageAccess = accessGrant !== null;
   const canManageSettings = settingsGrant !== null;
   const canReadAudit = auditGrant !== null;
+  const [notifications, notificationTemplates] = await Promise.all([
+    listStaffNotifications(staff.id),
+    canManageSettings ? listNotificationTemplates() : Promise.resolve([]),
+  ]);
   const [staffUsers, roles, permissions, permissionOverrides] = canManageAccess
     ? await Promise.all([
         listStaffUsers(),
@@ -118,6 +127,14 @@ export default async function DashboardPage() {
       {canManageSettings ? (
         <SuperAdminSettings settings={settings} branches={branches ?? []} />
       ) : null}
+      {canManageSettings ? (
+        <NotificationTemplateManagement templates={notificationTemplates} />
+      ) : null}
+      <NotificationInbox
+        locale={settings.locale}
+        notifications={notifications}
+        timeZone={settings.defaultTimezone}
+      />
       {canReadAudit ? (
         <AuditLog
           initialCursor={auditPage.nextCursor}

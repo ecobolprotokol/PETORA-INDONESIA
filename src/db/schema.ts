@@ -28,6 +28,9 @@ export const businessSettings = pgTable("business_settings", {
   taxEnabled: boolean("tax_enabled").notNull(),
   taxRateBps: integer("tax_rate_bps").notNull(),
   taxIncluded: boolean("tax_included").notNull(),
+  quietHoursEnabled: boolean("quiet_hours_enabled").notNull().default(false),
+  quietHoursStart: text("quiet_hours_start").notNull().default("22:00"),
+  quietHoursEnd: text("quiet_hours_end").notNull().default("08:00"),
   primaryColor: text("primary_color").notNull(),
   theme: text("theme").notNull().$type<"light" | "dark" | "system">(),
   updatedBy: uuid("updated_by").references(() => staffUsers.id, { onDelete: "set null" }),
@@ -247,6 +250,41 @@ export const auditEvents = pgTable(
   (table) => [
     index("audit_events_created_at_idx").on(table.createdAt),
     index("audit_events_actor_action_idx").on(table.actorUserId, table.action),
+  ],
+);
+
+export const notificationTemplates = pgTable("notification_templates", {
+  key: text("key").primaryKey(),
+  description: text("description").notNull(),
+  titleTemplate: text("title_template").notNull(),
+  bodyTemplate: text("body_template").notNull(),
+  isEnabled: boolean("is_enabled").notNull().default(true),
+  honorsQuietHours: boolean("honors_quiet_hours").notNull().default(false),
+  updatedBy: uuid("updated_by").references(() => staffUsers.id, { onDelete: "set null" }),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+});
+
+export const staffNotifications = pgTable(
+  "staff_notifications",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    recipientUserId: uuid("recipient_user_id")
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: "cascade" }),
+    templateKey: text("template_key")
+      .notNull()
+      .references(() => notificationTemplates.key, { onDelete: "restrict" }),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    status: text("status").$type<"queued" | "delivered" | "failed">().notNull().default("queued"),
+    attempts: integer("attempts").notNull().default(0),
+    lastErrorCode: text("last_error_code"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true, mode: "date" }),
+    readAt: timestamp("read_at", { withTimezone: true, mode: "date" }),
+  },
+  (table) => [
+    index("staff_notifications_inbox_idx").on(table.recipientUserId, table.status, table.createdAt),
   ],
 );
 
