@@ -61,6 +61,10 @@ export function SuperAdminSettings({ settings, branches }: SuperAdminSettingsPro
     const form = event.currentTarget;
     const values = new FormData(form);
     const taxPercent = Number(values.get("taxRatePercent"));
+    const logoUrl = values.get("logoUrl");
+    const invoiceTemplate = values.get("invoiceTemplate");
+    const receiptTemplate = values.get("receiptTemplate");
+    const certificateTemplate = values.get("certificateTemplate");
     void save("/api/settings", {
       businessName: values.get("businessName"),
       defaultTimezone: values.get("defaultTimezone"),
@@ -73,6 +77,19 @@ export function SuperAdminSettings({ settings, branches }: SuperAdminSettingsPro
       quietHoursEnd: values.get("quietHoursEnd"),
       primaryColor: values.get("primaryColor"),
       theme: values.get("theme"),
+      logoUrl: typeof logoUrl === "string" && logoUrl.trim() ? logoUrl.trim() : null,
+      invoiceTemplate:
+        typeof invoiceTemplate === "string" && invoiceTemplate.trim()
+          ? invoiceTemplate.trim()
+          : null,
+      receiptTemplate:
+        typeof receiptTemplate === "string" && receiptTemplate.trim()
+          ? receiptTemplate.trim()
+          : null,
+      certificateTemplate:
+        typeof certificateTemplate === "string" && certificateTemplate.trim()
+          ? certificateTemplate.trim()
+          : null,
       features: {
         commissions: values.get("featureCommissions") === "on",
         loyalty: values.get("featureLoyalty") === "on",
@@ -195,6 +212,48 @@ export function SuperAdminSettings({ settings, branches }: SuperAdminSettingsPro
               <option value="dark">Gelap</option>
             </select>
           </label>
+          <label>
+            URL logo
+            <input
+              defaultValue={settings.logoUrl ?? ""}
+              maxLength={2048}
+              name="logoUrl"
+              placeholder="https://..."
+            />
+          </label>
+          <fieldset className="permission-options">
+            <legend>Template dokumen</legend>
+            <label>
+              Template invoice
+              <textarea
+                defaultValue={settings.invoiceTemplate ?? ""}
+                maxLength={8192}
+                name="invoiceTemplate"
+                rows={4}
+              />
+            </label>
+            <label>
+              Template kuitansi
+              <textarea
+                defaultValue={settings.receiptTemplate ?? ""}
+                maxLength={8192}
+                name="receiptTemplate"
+                rows={4}
+              />
+            </label>
+            <label>
+              Template sertifikat
+              <textarea
+                defaultValue={settings.certificateTemplate ?? ""}
+                maxLength={8192}
+                name="certificateTemplate"
+                rows={4}
+              />
+            </label>
+            <p className="auth-card__description">
+              Gunakan placeholder seperti {"{{businessName}}"}, {"{{total}}"}, dan {"{{date}}"}.
+            </p>
+          </fieldset>
           <fieldset className="permission-options">
             <legend>Fitur modul</legend>
             <label className="permission-option">

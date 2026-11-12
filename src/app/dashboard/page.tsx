@@ -12,6 +12,7 @@ import {
 } from "@/components/notifications/notification-center";
 import { SuperAdminSettings } from "@/components/settings/super-admin-settings";
 import { StaffManagement } from "@/components/staff/staff-management";
+import { SupervisorPinManagement } from "@/components/supervisor/pin-management";
 import {
   authorizeStaff,
   listAccessRoles,
@@ -25,6 +26,7 @@ import { getSetupStatus, getTotpStatus } from "@/server/auth/service";
 import { listNotificationTemplates, listStaffNotifications } from "@/server/notifications/queue";
 import { getBusinessSettings } from "@/server/settings/service";
 import { listStaffUsers } from "@/server/staff/service";
+import { getSupervisorPinStatus } from "@/server/supervisor/pin";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +42,7 @@ export default async function DashboardPage() {
   const twoFactor = await getTotpStatus(staff.id);
   const sessions = await getCurrentStaffSessions(staff.id);
   const branches = await listBranchesForStaff(staff);
+  const supervisorPin = await getSupervisorPinStatus(staff.id);
   const canManageBranches = (await authorizeStaff(staff, "branches.manage")) !== null;
   const [accessGrant, settingsGrant, auditGrant] = await Promise.all([
     authorizeStaff(staff, "access.manage"),
@@ -149,6 +152,7 @@ export default async function DashboardPage() {
         timeZone={settings.defaultTimezone}
       />
       <TwoFactorManagement enabled={twoFactor.enabled} />
+      <SupervisorPinManagement pinSet={supervisorPin.isSet} />
       <footer>Powered by PETORA INDONESIA</footer>
     </main>
   );

@@ -16,7 +16,11 @@ export function SetupForm() {
     setReadiness("checking");
     try {
       const response = await fetch("/api/setup/readiness", { cache: "no-store" });
-      if (!response.ok) {
+      const result: { ready?: boolean; database?: boolean } = await response
+        .json()
+        .catch(() => ({}));
+
+      if (!response.ok || result.ready !== true || result.database !== true) {
         setReadiness("failed");
         return;
       }

@@ -74,6 +74,11 @@ export async function listAccessRoles() {
       key: rolePermissions.permissionKey,
       description: accessPermissions.description,
       dataScope: rolePermissions.dataScope,
+      maxDiscountBps: rolePermissions.maxDiscountBps,
+      maxRefundCents: rolePermissions.maxRefundCents,
+      maxVoidCents: rolePermissions.maxVoidCents,
+      maxTransferCents: rolePermissions.maxTransferCents,
+      requiresSupervisorPin: rolePermissions.requiresSupervisorPin,
     })
     .from(rolePermissions)
     .innerJoin(accessPermissions, eq(rolePermissions.permissionKey, accessPermissions.key))
@@ -113,6 +118,11 @@ export async function listPermissionOverrides() {
       effect: staffPermissionOverrides.effect,
       dataScope: staffPermissionOverrides.dataScope,
       reason: staffPermissionOverrides.reason,
+      maxDiscountBps: staffPermissionOverrides.maxDiscountBps,
+      maxRefundCents: staffPermissionOverrides.maxRefundCents,
+      maxVoidCents: staffPermissionOverrides.maxVoidCents,
+      maxTransferCents: staffPermissionOverrides.maxTransferCents,
+      requiresSupervisorPin: staffPermissionOverrides.requiresSupervisorPin,
       updatedAt: staffPermissionOverrides.updatedAt,
     })
     .from(staffPermissionOverrides)
@@ -164,6 +174,11 @@ export async function setPermissionOverride(input: PermissionOverrideInput, acto
         effect: input.effect,
         dataScope: input.dataScope,
         reason: input.reason,
+        maxDiscountBps: input.maxDiscountBps ?? null,
+        maxRefundCents: input.maxRefundCents ?? null,
+        maxVoidCents: input.maxVoidCents ?? null,
+        maxTransferCents: input.maxTransferCents ?? null,
+        requiresSupervisorPin: input.requiresSupervisorPin ?? false,
         updatedBy: actorUserId,
         updatedAt: new Date(),
       };
@@ -267,10 +282,15 @@ export async function createAccessRole(input: CreateRoleInput, actorUserId: stri
 
       if (input.permissions.length > 0) {
         await tx.insert(rolePermissions).values(
-          input.permissions.map(({ key, dataScope }) => ({
+          input.permissions.map((permission) => ({
             roleId: role.id,
-            permissionKey: key,
-            dataScope,
+            permissionKey: permission.key,
+            dataScope: permission.dataScope,
+            maxDiscountBps: permission.maxDiscountBps ?? null,
+            maxRefundCents: permission.maxRefundCents ?? null,
+            maxVoidCents: permission.maxVoidCents ?? null,
+            maxTransferCents: permission.maxTransferCents ?? null,
+            requiresSupervisorPin: permission.requiresSupervisorPin ?? false,
           })),
         );
       }
@@ -280,7 +300,10 @@ export async function createAccessRole(input: CreateRoleInput, actorUserId: stri
         action: "access.role_created",
         targetType: "access_role",
         targetId: role.id,
-        metadata: { requiresTwoFactor: String(input.requiresTwoFactor) },
+        metadata: {
+          requiresTwoFactor: String(input.requiresTwoFactor),
+          permissionCount: String(input.permissions.length),
+        },
       });
 
       return role;
@@ -354,10 +377,15 @@ export async function updateAccessRole(
       await tx.delete(rolePermissions).where(eq(rolePermissions.roleId, role.id));
       if (input.permissions.length > 0) {
         await tx.insert(rolePermissions).values(
-          input.permissions.map(({ key, dataScope }) => ({
+          input.permissions.map((permission) => ({
             roleId: role.id,
-            permissionKey: key,
-            dataScope,
+            permissionKey: permission.key,
+            dataScope: permission.dataScope,
+            maxDiscountBps: permission.maxDiscountBps ?? null,
+            maxRefundCents: permission.maxRefundCents ?? null,
+            maxVoidCents: permission.maxVoidCents ?? null,
+            maxTransferCents: permission.maxTransferCents ?? null,
+            requiresSupervisorPin: permission.requiresSupervisorPin ?? false,
           })),
         );
       }
@@ -487,13 +515,31 @@ export async function assignAccessRole(input: AssignRoleInput, actorUserId: stri
   }
 }
 
+export interface StaffAuthorization {
+  dataScope: PermissionDataScope;
+  branchScope: "all" | "assigned";
+  maxDiscountBps: number | null;
+  maxRefundCents: number | null;
+  maxVoidCents: number | null;
+  maxTransferCents: number | null;
+  requiresSupervisorPin: boolean;
+}
+
 export async function authorizeStaff(
   staff: AuthenticatedStaff,
   permissionKey: PermissionKey,
   branchId?: string,
-): Promise<{ dataScope: PermissionDataScope; branchScope: "all" | "assigned" } | null> {
+): Promise<StaffAuthorization | null> {
   if (staff.isOwner) {
-    return { dataScope: "all", branchScope: "all" };
+    return {
+      dataScope: "all",
+      branchScope: "all",
+      maxDiscountBps: null,
+      maxRefundCents: null,
+      maxVoidCents: null,
+      maxTransferCents: null,
+      requiresSupervisorPin: false,
+    };
   }
 
   const database = getDatabase();
@@ -533,6 +579,11 @@ export async function authorizeStaff(
     .select({
       dataScope: rolePermissions.dataScope,
       assignmentBranchId: staffRoleAssignments.branchId,
+      maxDiscountBps: rolePermissions.maxDiscountBps,
+      maxRefundCents: rolePermissions.maxRefundCents,
+      maxVoidCents: rolePermissions.maxVoidCents,
+      maxTransferCents: rolePermissions.maxTransferCents,
+      requiresSupervisorPin: rolePermissions.requiresSupervisorPin,
     })
     .from(staffRoleAssignments)
     .innerJoin(accessRoles, eq(staffRoleAssignments.roleId, accessRoles.id))
@@ -558,6 +609,11 @@ export async function authorizeStaff(
       effect: staffPermissionOverrides.effect,
       dataScope: staffPermissionOverrides.dataScope,
       assignmentBranchId: staffPermissionOverrides.branchId,
+      maxDiscountBps: staffPermissionOverrides.maxDiscountBps,
+      maxRefundCents: staffPermissionOverrides.maxRefundCents,
+      maxVoidCents: staffPermissionOverrides.maxVoidCents,
+      maxTransferCents: staffPermissionOverrides.maxTransferCents,
+      requiresSupervisorPin: staffPermissionOverrides.requiresSupervisorPin,
     })
     .from(staffPermissionOverrides)
     .where(
@@ -576,17 +632,50 @@ export async function authorizeStaff(
     ...grants,
     ...overrides
       .filter(({ effect }) => effect === "allow")
-      .map(({ dataScope, assignmentBranchId }) => ({ dataScope, assignmentBranchId })),
+      .map(
+        ({
+          dataScope,
+          assignmentBranchId,
+          maxDiscountBps,
+          maxRefundCents,
+          maxVoidCents,
+          maxTransferCents,
+          requiresSupervisorPin,
+        }) => ({
+          dataScope,
+          assignmentBranchId,
+          maxDiscountBps,
+          maxRefundCents,
+          maxVoidCents,
+          maxTransferCents,
+          requiresSupervisorPin,
+        }),
+      ),
   ];
   if (allowedGrants.length === 0) {
     return null;
   }
+
+  const mostRestrictive = <T extends number>(values: Array<T | null>): T | null => {
+    const present = values.filter((value): value is T => value !== null);
+    if (present.length === 0) {
+      return null;
+    }
+    return Math.min(...present) as T;
+  };
 
   return {
     dataScope: allowedGrants.some(({ dataScope }) => dataScope === "all") ? "all" : "own",
     branchScope: allowedGrants.some(({ assignmentBranchId }) => assignmentBranchId === null)
       ? "all"
       : "assigned",
+    maxDiscountBps: mostRestrictive(allowedGrants.map(({ maxDiscountBps }) => maxDiscountBps)),
+    maxRefundCents: mostRestrictive(allowedGrants.map(({ maxRefundCents }) => maxRefundCents)),
+    maxVoidCents: mostRestrictive(allowedGrants.map(({ maxVoidCents }) => maxVoidCents)),
+    maxTransferCents: mostRestrictive(
+      allowedGrants.map(({ maxTransferCents }) => maxTransferCents),
+    ),
+    requiresSupervisorPin: allowedGrants.some(({ requiresSupervisorPin }) => requiresSupervisorPin),
   };
 }
 

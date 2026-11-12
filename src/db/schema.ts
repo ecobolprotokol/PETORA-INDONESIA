@@ -33,6 +33,10 @@ export const businessSettings = pgTable("business_settings", {
   quietHoursEnd: text("quiet_hours_end").notNull().default("08:00"),
   primaryColor: text("primary_color").notNull(),
   theme: text("theme").notNull().$type<"light" | "dark" | "system">(),
+  logoUrl: text("logo_url"),
+  invoiceTemplate: text("invoice_template"),
+  receiptTemplate: text("receipt_template"),
+  certificateTemplate: text("certificate_template"),
   updatedBy: uuid("updated_by").references(() => staffUsers.id, { onDelete: "set null" }),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
 });
@@ -83,6 +87,7 @@ export const staffUsers = pgTable(
     }),
     totpEnabledAt: timestamp("totp_enabled_at", { withTimezone: true, mode: "date" }),
     totpLastUsedStep: bigint("totp_last_used_step", { mode: "number" }).notNull().default(-1),
+    supervisorPinHash: text("supervisor_pin_hash"),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
   },
@@ -142,6 +147,11 @@ export const rolePermissions = pgTable(
       .notNull()
       .references(() => accessPermissions.key, { onDelete: "restrict" }),
     dataScope: text("data_scope").$type<"all" | "own">().notNull().default("all"),
+    maxDiscountBps: integer("max_discount_bps").$type<number | null>(),
+    maxRefundCents: bigint("max_refund_cents", { mode: "number" }).$type<number | null>(),
+    maxVoidCents: bigint("max_void_cents", { mode: "number" }).$type<number | null>(),
+    maxTransferCents: bigint("max_transfer_cents", { mode: "number" }).$type<number | null>(),
+    requiresSupervisorPin: boolean("requires_supervisor_pin").notNull().default(false),
   },
   (table) => [
     primaryKey({ columns: [table.roleId, table.permissionKey] }),
@@ -163,6 +173,11 @@ export const staffPermissionOverrides = pgTable(
     effect: text("effect").$type<"allow" | "deny">().notNull(),
     dataScope: text("data_scope").$type<"all" | "own">().notNull().default("all"),
     reason: text("reason").notNull(),
+    maxDiscountBps: integer("max_discount_bps").$type<number | null>(),
+    maxRefundCents: bigint("max_refund_cents", { mode: "number" }).$type<number | null>(),
+    maxVoidCents: bigint("max_void_cents", { mode: "number" }).$type<number | null>(),
+    maxTransferCents: bigint("max_transfer_cents", { mode: "number" }).$type<number | null>(),
+    requiresSupervisorPin: boolean("requires_supervisor_pin").notNull().default(false),
     createdBy: uuid("created_by")
       .notNull()
       .references(() => staffUsers.id, { onDelete: "restrict" }),

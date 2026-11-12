@@ -31,6 +31,10 @@ export async function getBusinessSettings() {
       quietHoursEnd: businessSettings.quietHoursEnd,
       primaryColor: businessSettings.primaryColor,
       theme: businessSettings.theme,
+      logoUrl: businessSettings.logoUrl,
+      invoiceTemplate: businessSettings.invoiceTemplate,
+      receiptTemplate: businessSettings.receiptTemplate,
+      certificateTemplate: businessSettings.certificateTemplate,
     })
     .from(businessSettings)
     .innerJoin(systemState, eq(systemState.id, businessSettings.id))
@@ -103,6 +107,10 @@ export async function updateBusinessSettings(
         quietHoursEnd: input.quietHoursEnd,
         primaryColor: input.primaryColor,
         theme: input.theme,
+        logoUrl: input.logoUrl ?? null,
+        invoiceTemplate: input.invoiceTemplate ?? null,
+        receiptTemplate: input.receiptTemplate ?? null,
+        certificateTemplate: input.certificateTemplate ?? null,
         updatedBy: actorUserId,
         updatedAt: new Date(),
       })

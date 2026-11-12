@@ -14,6 +14,28 @@ type RoleOption = Awaited<ReturnType<typeof listAccessRoles>>[number];
 type PermissionOption = Awaited<ReturnType<typeof listPermissionCatalog>>[number];
 type PermissionOverride = Awaited<ReturnType<typeof listPermissionOverrides>>[number];
 
+function parseFinancialCap(value: FormDataEntryValue | null): number | null {
+  if (typeof value !== "string" || value.trim() === "") {
+    return null;
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 10_000) {
+    return null;
+  }
+  return Math.floor(parsed);
+}
+
+function parseFinancialCents(value: FormDataEntryValue | null): number | null {
+  if (typeof value !== "string" || value.trim() === "") {
+    return null;
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 999_999_999_999) {
+    return null;
+  }
+  return Math.floor(parsed);
+}
+
 interface BranchOption {
   id: string;
   code: string;
@@ -104,6 +126,11 @@ export function StaffManagement({
       .map((key) => ({
         key,
         dataScope: formData.get(`permissionScope:${key}`) === "own" ? "own" : "all",
+        maxDiscountBps: parseFinancialCap(formData.get(`maxDiscountBps:${key}`)),
+        maxRefundCents: parseFinancialCents(formData.get(`maxRefundCents:${key}`)),
+        maxVoidCents: parseFinancialCents(formData.get(`maxVoidCents:${key}`)),
+        maxTransferCents: parseFinancialCents(formData.get(`maxTransferCents:${key}`)),
+        requiresSupervisorPin: formData.get(`requiresSupervisorPin:${key}`) === "on",
       }));
 
     const saved = await send(
@@ -161,6 +188,11 @@ export function StaffManagement({
         dataScope:
           overrideEffect === "allow" ? (formData.get("overrideDataScope") ?? "all") : "all",
         reason: formData.get("reason"),
+        maxDiscountBps: parseFinancialCap(formData.get("overrideMaxDiscountBps")),
+        maxRefundCents: parseFinancialCents(formData.get("overrideMaxRefundCents")),
+        maxVoidCents: parseFinancialCents(formData.get("overrideMaxVoidCents")),
+        maxTransferCents: parseFinancialCents(formData.get("overrideMaxTransferCents")),
+        requiresSupervisorPin: formData.get("overrideRequiresSupervisorPin") === "on",
       },
       form,
     );
@@ -439,6 +471,74 @@ export function StaffManagement({
                     </select>
                   </label>
                 ) : null}
+                <label>
+                  Maks. diskon (bps, optional)
+                  <input
+                    defaultValue={
+                      (editingRole ?? cloningRole)?.permissions.find(
+                        ({ key }) => key === permission.key,
+                      )?.maxDiscountBps ?? ""
+                    }
+                    max={10_000}
+                    min={0}
+                    name={`maxDiscountBps:${permission.key}`}
+                    type="number"
+                  />
+                </label>
+                <label>
+                  Maks. refund (sen, optional)
+                  <input
+                    defaultValue={
+                      (editingRole ?? cloningRole)?.permissions.find(
+                        ({ key }) => key === permission.key,
+                      )?.maxRefundCents ?? ""
+                    }
+                    max={999_999_999_999}
+                    min={0}
+                    name={`maxRefundCents:${permission.key}`}
+                    type="number"
+                  />
+                </label>
+                <label>
+                  Maks. void (sen, optional)
+                  <input
+                    defaultValue={
+                      (editingRole ?? cloningRole)?.permissions.find(
+                        ({ key }) => key === permission.key,
+                      )?.maxVoidCents ?? ""
+                    }
+                    max={999_999_999_999}
+                    min={0}
+                    name={`maxVoidCents:${permission.key}`}
+                    type="number"
+                  />
+                </label>
+                <label>
+                  Maks. transfer (sen, optional)
+                  <input
+                    defaultValue={
+                      (editingRole ?? cloningRole)?.permissions.find(
+                        ({ key }) => key === permission.key,
+                      )?.maxTransferCents ?? ""
+                    }
+                    max={999_999_999_999}
+                    min={0}
+                    name={`maxTransferCents:${permission.key}`}
+                    type="number"
+                  />
+                </label>
+                <label className="permission-option">
+                  <input
+                    defaultChecked={
+                      (editingRole ?? cloningRole)?.permissions.find(
+                        ({ key }) => key === permission.key,
+                      )?.requiresSupervisorPin ?? false
+                    }
+                    name={`requiresSupervisorPin:${permission.key}`}
+                    type="checkbox"
+                  />
+                  <span>Wajibkan PIN supervisor untuk aksi ini</span>
+                </label>
               </div>
             ))}
           </fieldset>
@@ -579,6 +679,26 @@ export function StaffManagement({
             </label>
           ) : null}
           <label>
+            Maks. diskon (bps, optional)
+            <input name="overrideMaxDiscountBps" type="number" min={0} max={10_000} />
+          </label>
+          <label>
+            Maks. refund (sen, optional)
+            <input name="overrideMaxRefundCents" type="number" min={0} max={999_999_999_999} />
+          </label>
+          <label>
+            Maks. void (sen, optional)
+            <input name="overrideMaxVoidCents" type="number" min={0} max={999_999_999_999} />
+          </label>
+          <label>
+            Maks. transfer (sen, optional)
+            <input name="overrideMaxTransferCents" type="number" min={0} max={999_999_999_999} />
+          </label>
+          <label className="permission-option">
+            <input name="overrideRequiresSupervisorPin" type="checkbox" />
+            <span>Wajibkan PIN supervisor</span>
+          </label>
+          <label>
             Alasan
             <input maxLength={500} minLength={5} name="reason" required />
           </label>
@@ -604,6 +724,19 @@ export function StaffManagement({
                   <span>{override.permissionKey}</span>
                   <span>
                     {override.branchName ?? "Semua cakupan"} · {override.reason}
+                    {override.maxDiscountBps != null
+                      ? ` · Maks diskon ${override.maxDiscountBps} bps`
+                      : ""}
+                    {override.maxRefundCents != null
+                      ? ` · Maks refund ${override.maxRefundCents} sen`
+                      : ""}
+                    {override.maxVoidCents != null
+                      ? ` · Maks void ${override.maxVoidCents} sen`
+                      : ""}
+                    {override.maxTransferCents != null
+                      ? ` · Maks transfer ${override.maxTransferCents} sen`
+                      : ""}
+                    {override.requiresSupervisorPin ? " · PIN supervisor wajib" : ""}
                   </span>
                 </div>
                 <button

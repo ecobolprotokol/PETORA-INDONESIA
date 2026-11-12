@@ -15,12 +15,12 @@ Fase 1 — Inti platform.
 - Bootstrap akun Owner satu kali dan nama bisnis; pembuatan Owner dan sesi awal atomik.
 - Login email/kata sandi dengan scrypt, cookie sesi HttpOnly dan SameSite Strict, sesi DB 12 jam, logout/revoke, serta pembatasan lima percobaan per email per 15 menit.
 - Audit pembuatan Owner, login, dan logout.
-- Perlindungan Owner ditegakkan oleh trigger PostgreSQL: akun Owner tidak bisa dihapus, diturunkan peran, atau dinonaktifkan.
+- Perlindungan Owner ditegakkan oleh trigger PostgreSQL: akun Owner tidak bisa diubah, diturunkan peran, atau dinonaktifkan.
 - Model cabang, zona waktu, daftar cabang, dan API tambah cabang dengan izin `branches.manage` serta bypass Owner; penciptaan cabang dicatat di audit dan tersedia dari dashboard.
 - Katalog izin awal `branches.read` dan `branches.manage`, service otorisasi backend, daftar cabang sesuai penugasan, dan pembuatan cabang sesuai izin.
 - API dan dashboard Owner untuk membuat/melihat/menonaktifkan staf, membuat/mengubah/mengklon peran, serta menetapkan beberapa peran secara global atau pada cabang tertentu; perubahan dicatat di audit. Perubahan peran mengunci baris peran dan staf untuk menjaga kewajiban 2FA terhadap penugasan aktif.
-- Katalog izin global untuk mengelola staf/peran, mengubah pengaturan, dan membaca audit; endpoint serta dashboard terkait menegakkan izin tersebut. Izin administratif ditandai berisiko tinggi dan pengelolaannya tetap Owner-only kecuali didelegasikan eksplisit.
-- Setup awal tersedia sebagai wizard tiga langkah dan endpoint readiness memeriksa koneksi aplikasi/basis data dari browser pengguna; hasilnya secara eksplisit tidak mengklaim koneksi webhook pihak ketiga.
+- Katalog izin global untuk mengelola staf/peran, mengubah pengaturan, dan membaca audit; endpoint dan dashboard terkait menegakkan izin tersebut. Izin administratif ditandai berisiko tinggi dan pengelolaannya tetap Owner-only kecuali didelegasikan eksplisit.
+- Setup awal tersedia sebagai wizard tiga langkah dan endpoint readiness memeriksa k aplikasi/basis data dari browser pengguna; hasilnya secara eksplisit tidak mengklaim koneksi webhook pihak ketiga.
 - Perubahan kata sandi atau penonaktifan staf mencabut semua sesi aktif; Owner tetap terlindungi.
 - Daftar sesi/perangkat aktif menampilkan label peramban dan waktu, tidak membocorkan token, serta memungkinkan pencabutan hanya sesi milik akun sendiri.
 - TOTP RFC 6238 tersedia untuk Owner dan staf: secret dienkripsi AES-256-GCM dengan kunci eksternal, enrollment memerlukan konfirmasi, login memakai challenge berumur pendek, dan replay kode ditolak.
@@ -35,18 +35,20 @@ Fase 1 — Inti platform.
 - Template notifikasi in-app untuk akun baru dan penugasan peran dapat dikelola Owner; pesan dan job `pg-boss` dibuat dalam transaksi domain, worker mengirimkannya ke inbox staf, job menggunakan retry/backoff, dan jam tenang mengikuti zona waktu bisnis. Kanal WhatsApp/email tetap berada pada fase integrasi.
 - API setup/login/logout memeriksa Origin; halaman setup, login, dan dashboard terlindungi tersedia.
 - Migrasi SQL berurutan berjalan otomatis saat aplikasi start; migrasi tes dibatasi pada database berakhiran `_test`.
-- Verifikasi terbaru lulus: lint, cek tipe, 26 tes unit, migrasi tes, 9 tes integrasi PostgreSQL termasuk worker notifikasi, dan production build.
+- Logo, template dokumen (invoice, kuitansi, sertifikat), dan PIN supervisor sudah tersedia melalui pengaturan bisnis dan dashboard masing-masing; PIN supervisor di-hash scrypt, diatur dengan verifikasi kata sandi, dan dicatat di audit.
+- Batas angka finansial (diskon maksimum dalam bps, refund/void/transfer maksimum dalam sen) dan wajib PIN supervisor sudah ada pada katalog izin, peran, dan pengecualian per staf; `authorizeStaff` mengembalikan nilai paling ketat dari grant peran dan pengecualian, dan nilai ini siap ditegakkan oleh domain transaksi.
+- Verifikasi terbaru lulus: lint, cek tipe, 26 tes unit, migrasi tes, 17 tes integrasi PostgreSQL (9 autentikasi + 8 PIN supervisor), dan production build.
 - Image produksi terbaru menjalankan seluruh migrasi dan halaman login merespons HTTP 200.
 
 ## Fase 1 yang belum selesai
 
-- Cakupan record "milik sendiri" untuk modul selain cabang, katalog izin domain, batas angka dan PIN supervisor yang diterapkan pada transaksi bisnis, serta audit aksi sensitif domain.
-- Pengaturan Super Admin lanjutan (logo dan template dokumen yang dipakai generator), pengujian eksplisit atas kegagalan/retry notifikasi, dan wizard setup lengkap termasuk pemeriksaan keterjangkauan server dari luar.
+- Cakupan record "milik sendiri" untuk modul selain cabang, katalog izin domain, dan audit aksi sensitif domain.
+- Pengujian eksplisit atas kegagalan/retry notifikasi, dan wizard setup lengkap termasuk pemeriksaan keterjangkauan server dari luar.
 - Daftar rinci dan status tes: [TRACEABILITY.md](docs/TRACEABILITY.md).
 
 ## Berikutnya
 
-- Lanjutkan Fase 1 dengan cakupan akses operasional, katalog izin/batas/PIN supervisor, audit lengkap, pengaturan Super Admin, verifikasi kebijakan retry notifikasi, serta wizard setup.
+- Lanjutkan Fase 1 dengan cakupan akses operasional, katalog izin/batas/PIN supervisor, audit lengkap, verifikasi kebijakan retry notifikasi, serta wizard setup.
 - Fase 1 tetap berjalan; autentikasi dua langkah dan kebijakan wajib per peran sudah tersedia, tetapi belum seluruh persyaratan inti platform terpenuhi.
 
 ## Gerbang Fase 2

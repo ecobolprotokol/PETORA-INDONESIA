@@ -306,7 +306,10 @@ describe("staff authentication with PostgreSQL", () => {
 
     const readinessResponse = await getSetupReadinessRoute();
     expect(readinessResponse.status).toBe(200);
-    await expect(readinessResponse.json()).resolves.toEqual({ ready: true });
+    await expect(readinessResponse.json()).resolves.toMatchObject({
+      ready: true,
+      database: true,
+    });
 
     const setup = await bootstrapOwner(setupInput);
     expect(await getSetupStatus()).toEqual({

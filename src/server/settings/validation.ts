@@ -29,6 +29,10 @@ export const updateBusinessSettingsSchema = z
       .toUpperCase()
       .regex(/^#[0-9A-F]{6}$/u),
     theme: z.enum(["light", "dark", "system"]),
+    logoUrl: z.string().trim().url().max(2048).optional().nullable(),
+    invoiceTemplate: z.string().trim().max(8192).optional().nullable(),
+    receiptTemplate: z.string().trim().max(8192).optional().nullable(),
+    certificateTemplate: z.string().trim().max(8192).optional().nullable(),
     features: z.object({
       commissions: z.boolean(),
       loyalty: z.boolean(),
